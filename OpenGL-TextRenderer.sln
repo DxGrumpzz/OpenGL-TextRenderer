@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.32126.315
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenGL-TextRenderer", "OpenGL-TextRenderer.vcxproj", "{8BED8222-7673-479D-BF35-379C39D58C21}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8BED8222-7673-479D-BF35-379C39D58C21}.Debug|x64.ActiveCfg = Debug|x64
+		{8BED8222-7673-479D-BF35-379C39D58C21}.Debug|x64.Build.0 = Debug|x64
+		{8BED8222-7673-479D-BF35-379C39D58C21}.Debug|x86.ActiveCfg = Debug|Win32
+		{8BED8222-7673-479D-BF35-379C39D58C21}.Debug|x86.Build.0 = Debug|Win32
+		{8BED8222-7673-479D-BF35-379C39D58C21}.Release|x64.ActiveCfg = Release|x64
+		{8BED8222-7673-479D-BF35-379C39D58C21}.Release|x64.Build.0 = Release|x64
+		{8BED8222-7673-479D-BF35-379C39D58C21}.Release|x86.ActiveCfg = Release|Win32
+		{8BED8222-7673-479D-BF35-379C39D58C21}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {AFA682CA-A892-4968-BC37-C6390CD33AEA}
+	EndGlobalSection
+EndGlobal
