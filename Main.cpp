@@ -214,48 +214,28 @@ int main()
     glCreateVertexArrays(1, &vao);
 
 
-    constexpr float vertices[] =
+    constexpr float screenSpaceVertices[] =
     {
-        // Bottom left
-        -416.0f, -72.0f,  0.0f, 0.0f,
-        // Bottom right
-        416.0f,  -72.0f,  1.0f, 0.0f,
-        // Top right
-        416.0f,   72.0f,  1.0f, 1.0f,
-
-        // Top right
-        416.0f,   72.0f,  1.0f, 1.0f,
         // Top left
-        -416.0f,  72.0f,  0.0f, 1.0f,
+        0.0f,  0.0f,  0.0f, 1.0f,
+        // Top right
+        416.0f, 0.0f,  1.0f, 1.0f,
         // Bottom left
-        -416.0f, -72.0f,  0.0f, 0.0f,
-    };
+        0.0f, 72.0f,  0.0f, 0.0f,
 
-
-    /*
-    constexpr float vertices[] =
-    {
-        // Bottom left
-        -1.0f, -1.0f,  0.0f, 0.0f,
+        // Top right
+        416.0f, 0.0f,  1.0f, 1.0f,
         // Bottom right
-        1.0f,  -1.0f,  1.0f, 0.0f,
-        // Top right
-        1.0f,   1.0f,  1.0f, 1.0f,
-
-        // Top right
-        1.0f,   1.0f,  1.0f, 1.0f,
-        // Top left
-        -1.0f,  1.0f,  0.0f, 1.0f,
+        416.0f, 72.0f,  1.0f, 0.0f,
         // Bottom left
-        -1.0f, -1.0f,  0.0f, 0.0f,
+        0.0f, 72.0f,  0.0f, 0.0f,
     };
-    */
 
 
 
     std::uint32_t vertexPositionsVBO = 0;
     glCreateBuffers(1, &vertexPositionsVBO);
-    glNamedBufferData(vertexPositionsVBO, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glNamedBufferData(vertexPositionsVBO, sizeof(screenSpaceVertices), screenSpaceVertices, GL_STATIC_DRAW);
     glVertexArrayVertexBuffer(vao, 0, vertexPositionsVBO, 0, sizeof(float) * 4);
 
     // Vertex position
@@ -364,7 +344,7 @@ int main()
     glDeleteShader(fragmentShaderID);
 
 
-    float delta = 0.0f;
+    float angleRadians = 0.0f;
 
     while(glfwWindowShouldClose(glfwWindow) == false)
     {
@@ -392,19 +372,19 @@ int main()
 
 
 
-        // Adjust projection according to window width and height
-        const glm::mat4 projection = glm::ortho(-static_cast<float>(WindowWidth), static_cast<float>(WindowWidth), -static_cast<float>(WindowHeight), static_cast<float>(WindowHeight), -1.0f, 1.0f);
+        const glm::mat4 screenSpaceProjection = glm::ortho(0.0f, static_cast<float>(WindowWidth), static_cast<float>(WindowHeight), 0.0f, -1.0f, 1.0f);
+
+        static double x = 0.0;
+        static double y = 0.0;
+
+        if(glfwGetMouseButton(glfwWindow, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+            glfwGetCursorPos(glfwWindow, &x, &y);
 
 
-        // glm::mat4 transform = glm::translate(glm::mat4(1.0f), { static_cast<int>(WindowWidth), static_cast<int>(WindowHeight) +, 0.0f });
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
 
 
-        glm::mat4 transform = glm::mat4(1.0f);
-        //glm::mat4 transform = glm::translate(glm::mat4(1.0f), { (-WindowWidth + (416)) + xOffset, (WindowHeight - (72)) - yOffset, 0.0f });
-        // transform = glm::rotate(transform, delta, { 0, 0, 1 });
-
-
-        glUniformMatrix4fv(projectionLocation, 1, false, glm::value_ptr(projection));
+        glUniformMatrix4fv(projectionLocation, 1, false, glm::value_ptr(screenSpaceProjection));
         glUniformMatrix4fv(transformLocation, 1, false, glm::value_ptr(transform));
 
 
@@ -414,19 +394,19 @@ int main()
 
 
 
-        
+
         if(glfwGetKey(glfwWindow, GLFW_KEY_SPACE) == GLFW_PRESS)
         {
-            delta += 0.0002f;
+            angleRadians += 0.0002f;
         }
         if(glfwGetKey(glfwWindow, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
         {
-            delta -= 0.0002f;
+            angleRadians -= 0.0002f;
         };
 
-        if(delta > glm::pi<float>() * 2)
+        if(glm::abs(angleRadians) > glm::pi<float>() * 2)
         {
-            delta = 0.0f;
+            angleRadians = 0.0f;
         };
 
     };
