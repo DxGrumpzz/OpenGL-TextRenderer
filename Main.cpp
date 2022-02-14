@@ -210,9 +210,13 @@ private:
     std::uint32_t _glyphWidth = 0;
     std::uint32_t _glyphHeight = 0;
 
+    std::uint32_t _columns = 0;
+    std::uint32_t _rows = 0;
+
     std::uint32_t _vao = 0;
 
-    std::array<float, 24> _vertices { 0 };
+    std::array<float, 24> _textureVertices { 0 };
+    std::array<float, 24> _glyphVertices { 0 };
 
 
 public:
@@ -225,32 +229,77 @@ public:
     {
         _textureID = LoadTexture(texturePath);
 
+        _columns = _textureWidth / glyphWidth;
+        _rows = _textureHeight / glyphHeight;
+
+
+        // const float textureWidthAsFloat = static_cast<float>(_textureWidth);
+        // const float textureHeightAsFloat = static_cast<float>(_textureHeight);
+
         const float textureWidthAsFloat = static_cast<float>(_textureWidth);
         const float textureHeightAsFloat = static_cast<float>(_textureHeight);
 
-        _vertices =
+        // Subtract 32 (The space character) from the selected character to the correct index
+        const int glyphIndex = 'T' - ' ';
+
+        // Convert 1D character to 2D.
+        const int glpyhX = glyphIndex % _columns;
+        const int glpyhY = glyphIndex / _columns;
+
+        const float textureCoordinateLeft = static_cast<float>(glpyhX) / _columns;
+        const float textureCoordinateBottom = static_cast<float>((2 - glpyhY)) / _rows;
+
+        const float textureCoordinateRight = static_cast<float>(glpyhX + 1) / _columns;
+        const float textureCoordinateTop = static_cast<float>((2 - glpyhY) + 1) / _rows;
+
+
+        _textureVertices =
         {
             // Top left
-            0.0f,  0.0f,                                0.0f, 1.0f,
+            0.0f,  0.0f,                                textureCoordinateLeft, textureCoordinateTop,
             // Top right
-            textureWidthAsFloat, 0.0f,                  1.0f, 1.0f,
+            textureWidthAsFloat, 0.0f,                  textureCoordinateRight, textureCoordinateTop,
             // Bottom left
-            0.0f, textureHeightAsFloat,                 0.0f, 0.0f,
+            0.0f, textureHeightAsFloat,                 textureCoordinateLeft, textureCoordinateBottom,
 
             // Top right
-            textureWidthAsFloat, 0.0f,                  1.0f, 1.0f,
+            textureWidthAsFloat, 0.0f,                  textureCoordinateRight, textureCoordinateTop,
             // Bottom right
-            textureWidthAsFloat, textureHeightAsFloat,  1.0f, 0.0f,
+            textureWidthAsFloat, textureHeightAsFloat,  textureCoordinateRight, textureCoordinateBottom,
             // Bottom left
-            0.0f, textureHeightAsFloat,                 0.0f, 0.0f,
+            0.0f, textureHeightAsFloat,                 textureCoordinateLeft, textureCoordinateBottom,
         };
+
+
+        const float glyphWidthAsFloat = static_cast<float>(glyphWidth);
+        const float glyphHeightAsFloat = static_cast<float>(glyphHeight);
+
+
+        _glyphVertices =
+        {
+            // Top left
+            0.0f,  0.0f,                            0.0f, 1.0f,
+            // Top right                            
+            glyphWidthAsFloat, 0.0f,                1.0f, 1.0f,
+            // Bottom left                          
+            0.0f, glyphHeightAsFloat,               0.0f, 0.0f,
+
+            // Top right                            
+            glyphWidthAsFloat, 0.0f,                1.0f, 1.0f,
+            // Bottom right
+            glyphWidthAsFloat, glyphHeightAsFloat,  1.0f, 0.0f,
+            // Bottom left
+            0.0f, glyphHeightAsFloat,               0.0f, 0.0f,
+        };
+
+
 
         glCreateVertexArrays(1, &_vao);
         glBindVertexArray(_vao);
 
         std::uint32_t vertexPositionsVBO = 0;
         glCreateBuffers(1, &vertexPositionsVBO);
-        glNamedBufferData(vertexPositionsVBO, sizeof(_vertices), _vertices.data(), GL_STATIC_DRAW);
+        glNamedBufferData(vertexPositionsVBO, sizeof(_textureVertices), _textureVertices.data(), GL_STATIC_DRAW);
         glVertexArrayVertexBuffer(_vao, 0, vertexPositionsVBO, 0, sizeof(float) * 4);
 
         // Vertex position
@@ -275,7 +324,7 @@ public:
     };
 
 
-    void Draw(const std::uint32_t shaderProgramID) const 
+    void Draw(const std::uint32_t shaderProgramID) const
     {
         glUseProgram(shaderProgramID);
 
@@ -366,6 +415,7 @@ public:
 };
 
 
+
 int main()
 {
     constexpr std::uint32_t initialWindowWidth = 800;
@@ -378,6 +428,8 @@ int main()
 
 
     const FontTexture fontTexture = FontTexture(13, 24, L"Resources\\Consolas13x24.bmp");
+
+
 
     #pragma region Shader program initialization
 
@@ -477,11 +529,13 @@ int main()
     #pragma endregion
 
 
+
     while(glfwWindowShouldClose(glfwWindow) == false)
     {
         glfwPollEvents();
 
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        //glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
 
