@@ -10,6 +10,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/glm.hpp>
+#include <array>
 
 #pragma comment(lib, "gdiplus.lib")
 
@@ -197,6 +198,174 @@ std::uint32_t GenerateTexture(const std::wstring_view& texturePath)
 
 
 
+class FontTexture
+{
+private:
+
+    std::uint32_t _textureID = 0;
+
+    std::uint32_t _textureWidth = 0;
+    std::uint32_t _textureHeight = 0;
+
+    std::uint32_t _glyphWidth = 0;
+    std::uint32_t _glyphHeight = 0;
+
+    std::uint32_t _vao = 0;
+
+    std::array<float, 24> _vertices { 0 };
+
+
+public:
+
+    FontTexture(const std::uint32_t glyphWidth,
+                const std::uint32_t glyphHeight,
+                const std::wstring_view& texturePath) :
+        _glyphWidth (glyphWidth),
+        _glyphHeight(glyphHeight)
+    {
+        _textureID = LoadTexture(texturePath);
+
+        const float textureWidthAsFloat = static_cast<float>(_textureWidth);
+        const float textureHeightAsFloat = static_cast<float>(_textureHeight);
+
+        _vertices =
+        {
+            // Top left
+            0.0f,  0.0f,                                0.0f, 1.0f,
+            // Top right
+            textureWidthAsFloat, 0.0f,                  1.0f, 1.0f,
+            // Bottom left
+            0.0f, textureHeightAsFloat,                 0.0f, 0.0f,
+
+            // Top right
+            textureWidthAsFloat, 0.0f,                  1.0f, 1.0f,
+            // Bottom right
+            textureWidthAsFloat, textureHeightAsFloat,  1.0f, 0.0f,
+            // Bottom left
+            0.0f, textureHeightAsFloat,                 0.0f, 0.0f,
+        };
+
+        glCreateVertexArrays(1, &_vao);
+        glBindVertexArray(_vao);
+
+        std::uint32_t vertexPositionsVBO = 0;
+        glCreateBuffers(1, &vertexPositionsVBO);
+        glNamedBufferData(vertexPositionsVBO, sizeof(_vertices), _vertices.data(), GL_STATIC_DRAW);
+        glVertexArrayVertexBuffer(_vao, 0, vertexPositionsVBO, 0, sizeof(float) * 4);
+
+        // Vertex position
+        glVertexArrayAttribFormat(_vao, 0, 2, GL_FLOAT, false, 0);
+        glVertexArrayAttribBinding(_vao, 0, 0);
+        glEnableVertexArrayAttrib(_vao, 0);
+
+        // Texture coordinate
+        glVertexArrayAttribFormat(_vao, 1, 2, GL_FLOAT, false, sizeof(float) * 2);
+        glVertexArrayAttribBinding(_vao, 1, 0);
+        glEnableVertexArrayAttrib(_vao, 1);
+
+    };
+
+
+    void Bind(const std::uint32_t textureUnit = 0) const
+    {
+        glActiveTexture(GL_TEXTURE0 + textureUnit);
+        glBindTexture(GL_TEXTURE_2D, _textureID);
+
+        glBindVertexArray(_vao);
+    };
+
+
+    void Draw(const std::uint32_t shaderProgramID) const 
+    {
+        glUseProgram(shaderProgramID);
+
+
+        const int projectionLocation = glGetUniformLocation(shaderProgramID, "Projection");
+
+        if(projectionLocation == -1)
+            __debugbreak();
+
+
+        const int transformLocation = glGetUniformLocation(shaderProgramID, "Transform");
+
+        if(transformLocation == -1)
+            __debugbreak();
+
+
+
+        const glm::mat4 screenSpaceProjection = glm::ortho(0.0f, static_cast<float>(WindowWidth), static_cast<float>(WindowHeight), 0.0f, -1.0f, 1.0f);
+
+
+        const glm::mat4 transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
+
+
+        glUniformMatrix4fv(projectionLocation, 1, false, glm::value_ptr(screenSpaceProjection));
+        glUniformMatrix4fv(transformLocation, 1, false, glm::value_ptr(transform));
+
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+    };
+
+
+    std::uint32_t LoadTexture(const std::wstring_view& texturePath)
+    {
+        // TODO: Make this texture loader more generic, in-case we may want to move to STBI or something
+
+        Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+        ULONG_PTR gdiplusToken = 0;
+        Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, nullptr);
+
+        Gdiplus::Bitmap* image = new Gdiplus::Bitmap(texturePath.data());
+
+
+        _textureWidth = image->GetWidth();
+        _textureHeight = image->GetHeight();
+
+        Gdiplus::Rect rc(0, 0, static_cast<std::uint32_t>(_textureWidth), static_cast<std::uint32_t>(_textureHeight));
+
+        Gdiplus::BitmapData* bitmapData = new Gdiplus::BitmapData();
+
+        image->RotateFlip(Gdiplus::RotateFlipType::Rotate180FlipX);
+
+        image->LockBits(&rc, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, bitmapData);
+
+
+        std::vector<std::uint32_t> pixels = std::vector<std::uint32_t>(_textureWidth * _textureHeight);
+
+        for(std::size_t y = 0; y < _textureHeight; y++)
+        {
+            memcpy(&pixels[y * _textureWidth], reinterpret_cast<char*>(bitmapData->Scan0) + bitmapData->Stride * y, _textureWidth * 4);
+
+            for(std::size_t x = 0; x < _textureWidth; x++)
+            {
+                std::uint32_t& pixel = pixels[y * _textureWidth + x];
+                pixel = (pixel & 0xff00ff00) | ((pixel & 0xff) << 16) | ((pixel & 0xff0000) >> 16);
+            };
+        };
+
+        image->UnlockBits(bitmapData);
+
+        delete bitmapData;
+        delete image;
+
+        Gdiplus::GdiplusShutdown(gdiplusToken);
+
+        std::uint32_t textureID;
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_2D, textureID);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<std::uint32_t>(_textureWidth), static_cast<std::uint32_t>(_textureHeight), 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+        return textureID;
+    };
+};
+
+
 int main()
 {
     constexpr std::uint32_t initialWindowWidth = 800;
@@ -207,48 +376,10 @@ int main()
 
     SetupOpenGL();
 
-    const std::uint32_t fontTexture = GenerateTexture(L"Resources\\Consolas13x24.bmp");
 
+    const FontTexture fontTexture = FontTexture(13, 24, L"Resources\\Consolas13x24.bmp");
 
-    std::uint32_t vao = 0;
-    glCreateVertexArrays(1, &vao);
-
-
-    constexpr float screenSpaceVertices[] =
-    {
-        // Top left
-        0.0f,  0.0f,  0.0f, 1.0f,
-        // Top right
-        416.0f, 0.0f,  1.0f, 1.0f,
-        // Bottom left
-        0.0f, 72.0f,  0.0f, 0.0f,
-
-        // Top right
-        416.0f, 0.0f,  1.0f, 1.0f,
-        // Bottom right
-        416.0f, 72.0f,  1.0f, 0.0f,
-        // Bottom left
-        0.0f, 72.0f,  0.0f, 0.0f,
-    };
-
-
-
-    std::uint32_t vertexPositionsVBO = 0;
-    glCreateBuffers(1, &vertexPositionsVBO);
-    glNamedBufferData(vertexPositionsVBO, sizeof(screenSpaceVertices), screenSpaceVertices, GL_STATIC_DRAW);
-    glVertexArrayVertexBuffer(vao, 0, vertexPositionsVBO, 0, sizeof(float) * 4);
-
-    // Vertex position
-    glVertexArrayAttribFormat(vao, 0, 2, GL_FLOAT, false, 0);
-    glVertexArrayAttribBinding(vao, 0, 0);
-    glEnableVertexArrayAttrib(vao, 0);
-
-    // Texture coordinate
-    glVertexArrayAttribFormat(vao, 1, 2, GL_FLOAT, false, sizeof(float) * 2);
-    glVertexArrayAttribBinding(vao, 1, 0);
-    glEnableVertexArrayAttrib(vao, 1);
-
-
+    #pragma region Shader program initialization
 
     const std::uint32_t vertexShaderID = glCreateShader(GL_VERTEX_SHADER);
 
@@ -343,8 +474,8 @@ int main()
     glDeleteShader(vertexShaderID);
     glDeleteShader(fragmentShaderID);
 
+    #pragma endregion
 
-    float angleRadians = 0.0f;
 
     while(glfwWindowShouldClose(glfwWindow) == false)
     {
@@ -353,61 +484,12 @@ int main()
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glBindVertexArray(vao);
-        glUseProgram(shaderProgramID);
 
+        fontTexture.Bind(0);
 
-
-
-        const int projectionLocation = glGetUniformLocation(shaderProgramID, "Projection");
-
-        if(projectionLocation == -1)
-            __debugbreak();
-
-
-        const int transformLocation = glGetUniformLocation(shaderProgramID, "Transform");
-
-        if(transformLocation == -1)
-            __debugbreak();
-
-
-
-        const glm::mat4 screenSpaceProjection = glm::ortho(0.0f, static_cast<float>(WindowWidth), static_cast<float>(WindowHeight), 0.0f, -1.0f, 1.0f);
-
-        static double x = 0.0;
-        static double y = 0.0;
-
-        if(glfwGetMouseButton(glfwWindow, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
-            glfwGetCursorPos(glfwWindow, &x, &y);
-
-
-        glm::mat4 transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
-
-
-        glUniformMatrix4fv(projectionLocation, 1, false, glm::value_ptr(screenSpaceProjection));
-        glUniformMatrix4fv(transformLocation, 1, false, glm::value_ptr(transform));
-
-
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+        fontTexture.Draw(shaderProgramID);
 
         glfwSwapBuffers(glfwWindow);
-
-
-
-
-        if(glfwGetKey(glfwWindow, GLFW_KEY_SPACE) == GLFW_PRESS)
-        {
-            angleRadians += 0.0002f;
-        }
-        if(glfwGetKey(glfwWindow, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-        {
-            angleRadians -= 0.0002f;
-        };
-
-        if(glm::abs(angleRadians) > glm::pi<float>() * 2)
-        {
-            angleRadians = 0.0f;
-        };
 
     };
 };
