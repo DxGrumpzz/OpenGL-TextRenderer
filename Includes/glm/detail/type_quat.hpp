@@ -2,6 +2,9 @@
 /// @file glm/detail/type_quat.hpp
 
 #pragma once
+#pragma warning(push)
+// Ignore warning C4201: nonstandard extension used: nameless struct/union
+#pragma warning(disable : 4201)
 
 // Dependency:
 #include "../detail/type_mat3x3.hpp"
@@ -184,3 +187,4 @@ namespace glm
 #ifndef GLM_EXTERNAL_TEMPLATE
 #include "type_quat.inl"
 #endif//GLM_EXTERNAL_TEMPLATE
+#pragma warning( pop )

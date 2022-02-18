@@ -1,6 +1,10 @@
-#include <Windows.h>
-#include <gdiplus.h>
+#define WIN32_LEAN_AND_MEN
+
 #include <glad/glad.h>
+#include <Windows.h>
+#include <locale.h>
+#include <objidl.h>
+#include <gdiplus.h>
 #include <GLFW/glfw3.h>
 #include <string_view>
 #include <iostream>
@@ -20,6 +24,14 @@ static int WindowHeight = 0;
 
 void APIENTRY GLDebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
 {
+    // Ignore unused parameter warnings
+    (void*)&type;
+    (void*)&source;
+    (void*)&id;
+    (void*)&length;
+    (void*)&length;
+    (void*)&userParam;
+    
     switch(severity)
     {
         case GL_DEBUG_SEVERITY_HIGH:
@@ -38,7 +50,7 @@ void APIENTRY GLDebugCallback(GLenum source, GLenum type, GLuint id, GLenum seve
 };
 
 
-void GLFWErrorCallback(int, const char* err_str)
+void GLFWErrorCallback(int, const char* err_str) noexcept
 {
     std::cerr << "GLFW Error: " << err_str << "\n";
     __debugbreak();
@@ -71,7 +83,7 @@ GLFWwindow* InitializeGLFWWindow(int windowWidth, int windowHeight, std::string_
     // Draw as fast as computerly possible
     glfwSwapInterval(0);
 
-    glfwSetFramebufferSizeCallback(glfwWindow, [](GLFWwindow* glfwWindow, int width, int height)
+    glfwSetFramebufferSizeCallback(glfwWindow, [](GLFWwindow* glfwWindow, int width, int height) noexcept
     {
         WindowWidth = width;
         WindowHeight = height;
@@ -87,8 +99,11 @@ GLFWwindow* InitializeGLFWWindow(int windowWidth, int windowHeight, std::string_
 
     WindowWidth = windowWidth;
     WindowHeight = windowHeight;
-
+    
+    // #pragma push()
+    // #pragma warning(disable: 0)
     gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress));
+    // #pragma pop()
 
     glfwShowWindow(glfwWindow);
 
@@ -120,78 +135,14 @@ std::string ReadAllText(const std::string& filename)
     std::string fileContents;
 
     // Resize the buffer to fit content
-    fileContents.resize(fileStream.tellg());
+    fileContents.resize(static_cast<std::size_t>(fileStream.tellg()));
 
     fileStream.seekg(std::ios::beg);
 
     // Read file contents into the buffer
-    fileStream.read(fileContents.data(), fileContents.size());
+    fileStream.read(fileContents.data(), static_cast<std::int64_t>(fileContents.size()));
 
     return fileContents;
-};
-
-
-std::uint32_t GenerateTexture(const std::wstring_view& texturePath)
-{
-    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-    ULONG_PTR gdiplusToken = 0;
-    Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, nullptr);
-
-    Gdiplus::Bitmap* image = new Gdiplus::Bitmap(texturePath.data());
-
-
-    const std::size_t width = image->GetWidth();
-    const std::size_t height = image->GetHeight();
-
-    Gdiplus::Rect rc(0, 0, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height));
-
-    Gdiplus::BitmapData* bitmapData = new Gdiplus::BitmapData();
-
-    image->RotateFlip(Gdiplus::RotateFlipType::Rotate180FlipX);
-
-    image->LockBits(&rc, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, bitmapData);
-
-
-    std::vector<std::uint32_t> pixels = std::vector<std::uint32_t>(width * height);
-
-    for(std::size_t y = 0; y < height; y++)
-    {
-        memcpy(&pixels[y * width], reinterpret_cast<char*>(bitmapData->Scan0) + bitmapData->Stride * y, width * 4);
-
-        for(int x = 0; x < width; x++)
-        {
-            std::uint32_t& pixel = pixels[y * width + x];
-            pixel = (pixel & 0xff00ff00) | ((pixel & 0xff) << 16) | ((pixel & 0xff0000) >> 16);
-        };
-    };
-
-    image->UnlockBits(bitmapData);
-
-    delete bitmapData;
-    delete image;
-
-    Gdiplus::GdiplusShutdown(gdiplusToken);
-
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    // glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-    return textureID;
 };
 
 
@@ -319,6 +270,7 @@ public:
 
         // TODO: Move to DSA
         // TODO: Optimization, try to send characters instead of texture coordinates
+        // TODO: Add chroma key
         glGenVertexArrays(1, &_vao);
         glBindVertexArray(_vao);
 
@@ -344,6 +296,7 @@ public:
 
         glDeleteVertexArrays(1,&_vao);
     };
+
 
 public:
 
@@ -387,7 +340,7 @@ public:
         // Allocate buffer memory if necessary
         if(text.size() > _capacity)
         {
-            const std::uint32_t newSSBOBuffer = AllocateAndBindBuffer(text.size() + (_capacity / 2), _glyphWidth, _glyphHeight);
+            const std::uint32_t newSSBOBuffer = AllocateAndBindBuffer(static_cast<std::uint32_t>(text.size()) + (_capacity / 2), _glyphWidth, _glyphHeight);
 
             // Delete old buffer
             glDeleteBuffers(1, &_glyphTextureCoordinatesSSBO);
@@ -408,12 +361,12 @@ public:
                                                                                    _fontSpriteWidth, _fontSpriteHeight,
                                                                                    _glyphWidth, _glyphHeight);
 
-            glBufferSubData(GL_SHADER_STORAGE_BUFFER, (sizeof(std::uint32_t) * 2) + (sizeof(textureCoordinates) * index), sizeof(textureCoordinates), &textureCoordinates);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<std::int64_t>((sizeof(std::int32_t) * 2) + (sizeof(textureCoordinates) * index)), sizeof(textureCoordinates), &textureCoordinates);
             index++;
         };
 
 
-        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, text.size());
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
     };
 
 
@@ -433,7 +386,7 @@ private:
         _fontSpriteWidth = image->GetWidth();
         _fontSpriteHeight = image->GetHeight();
 
-        Gdiplus::Rect rc(0, 0, static_cast<std::uint32_t>(_fontSpriteWidth), static_cast<std::uint32_t>(_fontSpriteHeight));
+        Gdiplus::Rect rc(0, 0, static_cast<int>(_fontSpriteWidth), static_cast<int>(_fontSpriteHeight));
 
         Gdiplus::BitmapData* bitmapData = new Gdiplus::BitmapData();
 
@@ -442,11 +395,11 @@ private:
         image->LockBits(&rc, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, bitmapData);
 
 
-        std::vector<std::uint32_t> pixels = std::vector<std::uint32_t>(_fontSpriteWidth * _fontSpriteHeight);
+        std::vector<std::uint32_t> pixels = std::vector<std::uint32_t>(static_cast<std::size_t>(_fontSpriteWidth) * _fontSpriteHeight);
 
         for(std::size_t y = 0; y < _fontSpriteHeight; y++)
         {
-            memcpy(&pixels[y * _fontSpriteWidth], reinterpret_cast<char*>(bitmapData->Scan0) + bitmapData->Stride * y, _fontSpriteWidth * 4);
+            memcpy(&pixels[y * _fontSpriteWidth], reinterpret_cast<char*>(bitmapData->Scan0) + static_cast<std::size_t>(bitmapData->Stride) * y, static_cast<std::size_t>(_fontSpriteWidth) * 4);
 
             for(std::size_t x = 0; x < _fontSpriteWidth; x++)
             {
@@ -472,7 +425,7 @@ private:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<std::uint32_t>(_fontSpriteWidth), static_cast<std::uint32_t>(_fontSpriteHeight), 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<int>(_fontSpriteWidth), static_cast<int>(_fontSpriteHeight), 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 
         return textureID;
     };
@@ -482,6 +435,9 @@ private:
                                         const std::uint32_t glyphWidth, const std::uint32_t glyphHeight,
                                         const std::uint32_t numberOfVertices = 6) const
     {
+        // Ignore warning
+        (void*)&glyphHeight;
+
         if(characterCapacity > _capacity)
             _capacity = characterCapacity;
 
@@ -491,7 +447,7 @@ private:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
 
 
-        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(numberOfVertices) + sizeof(glyphWidth) + (sizeof(std::array<float, 12>) * _capacity), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<std::int64_t>(sizeof(numberOfVertices) + sizeof(glyphWidth) + (sizeof(std::array<float, 12>) * _capacity)), nullptr, GL_DYNAMIC_DRAW);
 
         // Number of vertices
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(numberOfVertices), &numberOfVertices);
@@ -513,19 +469,19 @@ private:
         // Subtract 32 (The space character) from the selected character to get the correct character index
         const int glyphIndex = character - ' ';
 
-        const int columns = textureWidth / glyphWidth;
-        const int rows = textureHeight / glyphHeight;
+        const std::uint32_t columns = textureWidth / glyphWidth;
+        const std::uint32_t rows = textureHeight / glyphHeight;
 
         // Convert 1D character to 2D.
-        const int glpyhX = glyphIndex % columns;
-        const int glpyhY = glyphIndex / columns;
+        const std::uint32_t glpyhX = glyphIndex % columns;
+        const std::uint32_t glpyhY = glyphIndex / columns;
 
         // Calculate texutre sampling bounds
-        const float textureCoordinateLeft = static_cast<float>(glpyhX) / columns;
-        const float textureCoordinateBottom = static_cast<float>((2 - glpyhY)) / rows;
+        const float textureCoordinateLeft = static_cast<float>(glpyhX) / static_cast<float>(columns);
+        const float textureCoordinateBottom = static_cast<float>((2 - glpyhY)) / static_cast<float>(rows);
 
-        const float textureCoordinateRight = static_cast<float>(glpyhX + 1) / columns;
-        const float textureCoordinateTop = static_cast<float>((2 - glpyhY) + 1) / rows;
+        const float textureCoordinateRight = static_cast<float>(glpyhX + 1) / static_cast<float>(columns);
+        const float textureCoordinateTop = static_cast<float>((2 - glpyhY) + 1) / static_cast<float>(rows);
 
 
         const std::array<float, 12> glyphTextureCoordinates
@@ -556,13 +512,11 @@ int main()
     constexpr std::uint32_t initialWindowWidth = 800;
     constexpr std::uint32_t initialWindowHeight = 600;
 
-
     GLFWwindow* glfwWindow = InitializeGLFWWindow(initialWindowWidth, initialWindowHeight, "OpenGL-TextRenderer");
 
     SetupOpenGL();
 
     const FontSprite fontTexture = FontSprite(13, 24, L"Resources\\Consolas13x24.bmp");
-
 
 
     #pragma region Shader program initialization
@@ -588,7 +542,7 @@ int main()
         glGetShaderiv(vertexShaderID, GL_INFO_LOG_LENGTH, &bufferLength);
 
         std::string error;
-        error.resize(bufferLength);
+        error.resize(static_cast<std::uint32_t>(bufferLength));
 
         glGetShaderInfoLog(vertexShaderID, bufferLength, &bufferLength, error.data());
 
@@ -620,7 +574,7 @@ int main()
         glGetShaderiv(fragmentShaderID, GL_INFO_LOG_LENGTH, &bufferLength);
 
         std::string error;
-        error.resize(bufferLength);
+        error.resize(static_cast<std::uint32_t>(bufferLength));
 
         glGetShaderInfoLog(fragmentShaderID, bufferLength, &bufferLength, error.data());
 
@@ -646,9 +600,9 @@ int main()
     {
         int bufferLength = 0;
         glGetProgramiv(shaderProgramID, GL_INFO_LOG_LENGTH, &bufferLength);
-
+        
         std::string error;
-        error.resize(bufferLength);
+        error.resize(static_cast<std::uint32_t>(bufferLength));
 
         glGetProgramInfoLog(shaderProgramID, bufferLength, &bufferLength, error.data());
 
@@ -664,9 +618,10 @@ int main()
 
 
 
-    static std::string textToDraw;
+    static std::string textToDraw = "Type anything!";
 
-    glfwSetKeyCallback(glfwWindow, [](GLFWwindow* glfwWindow, int key, int scanCode, int actions, int modBits)
+    // Keyboard input handler
+    glfwSetKeyCallback(glfwWindow, [](GLFWwindow* glfwWindow, int key, int scanCode, int actions, int modBits) noexcept
     {
         if(actions == GLFW_PRESS)
             return;
@@ -710,8 +665,18 @@ int main()
 
         // If shift is engaged..
         if(modBits & GLFW_MOD_SHIFT)
-            // Subtract 32 from the letter so we get capital letters
-            actualKey -= 32;
+        {
+            // If the pressed key is contained within alphabet character range..
+            if(actualKey >= 97 && actualKey <= 122)
+                // Subtract 32 from the letter so we get capital letters
+                actualKey -= 32;
+
+            // If the key is numeric..
+            if(actualKey >= 48 && actualKey <= 57)
+                // Subtract 16 to get the correct symbol
+                actualKey -= 16;
+
+        }
 
         textToDraw.append(1, actualKey);
     });
