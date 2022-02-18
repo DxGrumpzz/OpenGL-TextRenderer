@@ -181,6 +181,10 @@
     <ClCompile Include="Main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Shaders\FontSpriteFragmentShader.glsl" />
+    <None Include="Shaders\FontSpriteVertexShader.glsl" />
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="GLUtils\ShaderProgram.hpp" />
     <ClInclude Include="WindowsUtilities.hpp" />
   </ItemGroup>

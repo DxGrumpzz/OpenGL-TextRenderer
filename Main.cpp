@@ -473,7 +473,7 @@ int main()
 
     const FontSprite fontTexture = FontSprite(13, 24, L"Resources\\Consolas13x24.bmp");
 
-    const ShaderProgram shaderProgram = ShaderProgram("Shaders\\VertexShader.glsl", "Shaders\\FragmentShader.glsl");
+    const ShaderProgram shaderProgram = ShaderProgram("Shaders\\FontSpriteVertexShader.glsl", "Shaders\\FontSpriteFragmentShader.glsl");
 
 
     static std::string textToDraw = "Type anything!";
