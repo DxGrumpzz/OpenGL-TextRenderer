@@ -3,9 +3,8 @@
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Includes\glad\glad.c" />
-  </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\VertexShader.glsl" />
-    <None Include="Shaders\FragmentShader.glsl" />
+    <ClInclude Include="GLUtils\ShaderProgram.hpp" />
+    <ClInclude Include="WindowsUtilities.hpp" />
   </ItemGroup>
 </Project>
