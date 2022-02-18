@@ -17,6 +17,8 @@
 
 #pragma comment(lib, "gdiplus.lib")
 
+#include "GLUtils/ShaderProgram.hpp"
+
 
 static int WindowWidth = 0;
 static int WindowHeight = 0;
@@ -31,7 +33,7 @@ void APIENTRY GLDebugCallback(GLenum source, GLenum type, GLuint id, GLenum seve
     (void*)&length;
     (void*)&length;
     (void*)&userParam;
-    
+
     switch(severity)
     {
         case GL_DEBUG_SEVERITY_HIGH:
@@ -99,11 +101,8 @@ GLFWwindow* InitializeGLFWWindow(int windowWidth, int windowHeight, std::string_
 
     WindowWidth = windowWidth;
     WindowHeight = windowHeight;
-    
-    // #pragma push()
-    // #pragma warning(disable: 0)
+
     gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress));
-    // #pragma pop()
 
     glfwShowWindow(glfwWindow);
 
@@ -118,31 +117,6 @@ void SetupOpenGL()
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-};
-
-
-
-/// <summary>
-/// Read all text inside a file
-/// </summary>
-/// <param name="filename"> Path to sid file </param>
-/// <returns></returns>
-std::string ReadAllText(const std::string& filename)
-{
-    // Open the file at the end so we can easily find its length
-    std::ifstream fileStream = std::ifstream(filename, std::ios::ate);
-
-    std::string fileContents;
-
-    // Resize the buffer to fit content
-    fileContents.resize(static_cast<std::size_t>(fileStream.tellg()));
-
-    fileStream.seekg(std::ios::beg);
-
-    // Read file contents into the buffer
-    fileStream.read(fileContents.data(), static_cast<std::int64_t>(fileContents.size()));
-
-    return fileContents;
 };
 
 
@@ -192,14 +166,18 @@ private:
     /// </summary>
     std::uint32_t _rows = 0;
 
+    
     std::uint32_t _vao = 0;
+    
     std::uint32_t _glyphVertexPositionsVBO = 0;
+
     mutable std::uint32_t _glyphTextureCoordinatesSSBO = 0;
+
 
     /// <summary>
     /// Character capacity, how many character we can write before we need to reallocate the buffer
     /// </summary>
-    mutable std::uint32_t _capacity = 12;
+    mutable std::uint32_t _capacity = 0;
 
 
 
@@ -207,9 +185,11 @@ public:
 
     FontSprite(const std::uint32_t glyphWidth,
                const std::uint32_t glyphHeight,
-               const std::wstring_view& texturePath) :
+               const std::wstring_view& texturePath,
+               const std::uint32_t capacity = 12) :
         _glyphWidth (glyphWidth),
-        _glyphHeight(glyphHeight)
+        _glyphHeight(glyphHeight),
+        _capacity(capacity)
     {
         _textureID = LoadTexture(texturePath);
 
@@ -239,14 +219,12 @@ public:
 
 
 
-        /*
         glCreateVertexArrays(1, &_vao);
         glBindVertexArray(_vao);
 
-
         // Glyph vertex positions
         glCreateBuffers(1, &_glyphVertexPositionsVBO);
-        glNamedBufferData(_glyphVertexPositionsVBO, sizeof(_glyphVertices), _glyphVertices.data(), GL_STATIC_DRAW);
+        glNamedBufferData(_glyphVertexPositionsVBO, sizeof(glyphVertices), glyphVertices.data(), GL_STATIC_DRAW);
         glVertexArrayVertexBuffer(_vao, 0, _glyphVertexPositionsVBO, 0, sizeof(float) * 2);
 
         glVertexArrayAttribFormat(_vao, 0, 2, GL_FLOAT, false, 0);
@@ -254,36 +232,10 @@ public:
         glEnableVertexArrayAttrib(_vao, 0);
 
 
-        // Texture coordinates
-        glCreateBuffers(1, &_glyphTextureCoordinatesVBO);
-        glNamedBufferData(_glyphTextureCoordinatesVBO, sizeof(_glyphTextureCoordinates), _glyphTextureCoordinates.data(), GL_DYNAMIC_DRAW);
-        glVertexArrayVertexBuffer(_vao, 1, _glyphTextureCoordinatesVBO, 0, sizeof(float) * 2);
-        glVertexArrayAttribFormat(_vao, 1, 2, GL_FLOAT, false, 0);
-        glVertexArrayAttribBinding(_vao, 1, 1);
-        glEnableVertexArrayAttrib(_vao, 1);
+        _glyphTextureCoordinatesSSBO = AllocateAndBindBuffer(12, _glyphWidth, _glyphHeight);
 
-        // glVertexArrayBindingDivisor(_vao, 1, _glyphTextureCoordinates.size());
-
-        glVertexArrayBindingDivisor(_vao, 1, 1);
-        */
-
-
-        // TODO: Move to DSA
         // TODO: Optimization, try to send characters instead of texture coordinates
         // TODO: Add chroma key
-        glGenVertexArrays(1, &_vao);
-        glBindVertexArray(_vao);
-
-
-        glGenBuffers(1, &_glyphVertexPositionsVBO);
-        glBindBuffer(GL_ARRAY_BUFFER, _glyphVertexPositionsVBO);
-
-        glBufferData(GL_ARRAY_BUFFER, sizeof(glyphVertices), glyphVertices.data(), GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 2, GL_FLOAT, false, sizeof(float) * 2, 0);
-        glEnableVertexAttribArray(0);
-
-
-        _glyphTextureCoordinatesSSBO = AllocateAndBindBuffer(12, _glyphWidth, _glyphHeight);
     };
 
 
@@ -294,7 +246,7 @@ public:
 
         glDeleteTextures(1, &_textureID);
 
-        glDeleteVertexArrays(1,&_vao);
+        glDeleteVertexArrays(1, &_vao);
     };
 
 
@@ -315,7 +267,7 @@ public:
     void Draw(const std::uint32_t shaderProgramID, const std::string& text) const
     {
         glUseProgram(shaderProgramID);
-        
+
 
         // Find uniform locations
         const int projectionLocation = glGetUniformLocation(shaderProgramID, "Projection");
@@ -361,7 +313,7 @@ public:
                                                                                    _fontSpriteWidth, _fontSpriteHeight,
                                                                                    _glyphWidth, _glyphHeight);
 
-            glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<std::int64_t>((sizeof(std::int32_t) * 2) + (sizeof(textureCoordinates) * index)), sizeof(textureCoordinates), &textureCoordinates);
+            glNamedBufferSubData(_glyphTextureCoordinatesSSBO, static_cast<std::int64_t>((sizeof(std::int32_t) * 2) + (sizeof(textureCoordinates) * index)), sizeof(textureCoordinates), &textureCoordinates);
             index++;
         };
 
@@ -435,25 +387,29 @@ private:
                                         const std::uint32_t glyphWidth, const std::uint32_t glyphHeight,
                                         const std::uint32_t numberOfVertices = 6) const
     {
-        // Ignore warning
+        // Ignore warning unused parameter
         (void*)&glyphHeight;
 
         if(characterCapacity > _capacity)
             _capacity = characterCapacity;
 
+
         std::uint32_t ssbo = 0;
 
-        glGenBuffers(1, &ssbo);
+
+        // Texture coordinates SSBO
+        glCreateBuffers(1, &ssbo);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
 
+        // Allocate SSBO memory for 2 32 bit ints, and 'n' of texture coordinate arrays
+        glNamedBufferData(ssbo, static_cast<std::int64_t>(sizeof(std::uint32_t) + sizeof(glyphWidth) + (sizeof(std::array<float, 12>) * _capacity)), nullptr, GL_DYNAMIC_DRAW);
 
-        glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<std::int64_t>(sizeof(numberOfVertices) + sizeof(glyphWidth) + (sizeof(std::array<float, 12>) * _capacity)), nullptr, GL_DYNAMIC_DRAW);
 
         // Number of vertices
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(numberOfVertices), &numberOfVertices);
+        glNamedBufferSubData(ssbo, 0, sizeof(numberOfVertices), &numberOfVertices);
 
         // Glyph width
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, sizeof(numberOfVertices), sizeof(glyphWidth), &glyphWidth);
+        glNamedBufferSubData(ssbo, static_cast<std::int64_t>(sizeof(std::int32_t)), sizeof(glyphWidth), &glyphWidth);
 
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
@@ -506,7 +462,6 @@ private:
 };
 
 
-
 int main()
 {
     constexpr std::uint32_t initialWindowWidth = 800;
@@ -518,104 +473,7 @@ int main()
 
     const FontSprite fontTexture = FontSprite(13, 24, L"Resources\\Consolas13x24.bmp");
 
-
-    #pragma region Shader program initialization
-
-    const std::uint32_t vertexShaderID = glCreateShader(GL_VERTEX_SHADER);
-
-    std::string vertexShaderText = ReadAllText("Shaders\\VertexShader.glsl");
-
-    const char* vertexShaderSource = vertexShaderText.data();
-
-    const int vertexShaderSourceLength = static_cast<int>(vertexShaderText.size());
-
-    glShaderSource(vertexShaderID, 1, &vertexShaderSource, &vertexShaderSourceLength);
-
-    glCompileShader(vertexShaderID);
-
-    int vertexShaderCompiledSuccesfully = 0;
-    glGetShaderiv(vertexShaderID, GL_COMPILE_STATUS, &vertexShaderCompiledSuccesfully);
-
-    if(vertexShaderCompiledSuccesfully != GL_TRUE)
-    {
-        int bufferLength = 0;
-        glGetShaderiv(vertexShaderID, GL_INFO_LOG_LENGTH, &bufferLength);
-
-        std::string error;
-        error.resize(static_cast<std::uint32_t>(bufferLength));
-
-        glGetShaderInfoLog(vertexShaderID, bufferLength, &bufferLength, error.data());
-
-        std::cerr << "Vertex shader compilation error:\n" << error << "\n";
-
-        __debugbreak();
-    };
-
-
-
-    const std::uint32_t fragmentShaderID = glCreateShader(GL_FRAGMENT_SHADER);
-
-    std::string fragmentShaderText = ReadAllText("Shaders\\FragmentShader.glsl");
-
-    const char* fragmentShaderSource = fragmentShaderText.data();
-
-    const int fragmentShaderSourceLength = static_cast<int>(fragmentShaderText.size());
-
-    glShaderSource(fragmentShaderID, 1, &fragmentShaderSource, &fragmentShaderSourceLength);
-
-    glCompileShader(fragmentShaderID);
-
-    int fragmentShaderCompiledSuccesfully = 0;
-    glGetShaderiv(fragmentShaderID, GL_COMPILE_STATUS, &fragmentShaderCompiledSuccesfully);
-
-    if(fragmentShaderCompiledSuccesfully != GL_TRUE)
-    {
-        int bufferLength = 0;
-        glGetShaderiv(fragmentShaderID, GL_INFO_LOG_LENGTH, &bufferLength);
-
-        std::string error;
-        error.resize(static_cast<std::uint32_t>(bufferLength));
-
-        glGetShaderInfoLog(fragmentShaderID, bufferLength, &bufferLength, error.data());
-
-        std::cerr << "Fragment shader compilation error:\n" << error << "\n";
-
-        __debugbreak();
-    };
-
-
-
-    const std::uint32_t shaderProgramID = glCreateProgram();
-
-    glAttachShader(shaderProgramID, vertexShaderID);
-    glAttachShader(shaderProgramID, fragmentShaderID);
-
-    glLinkProgram(shaderProgramID);
-
-
-    int programLinkedSuccesfully = 0;
-    glGetProgramiv(shaderProgramID, GL_LINK_STATUS, &programLinkedSuccesfully);
-
-    if(programLinkedSuccesfully != GL_TRUE)
-    {
-        int bufferLength = 0;
-        glGetProgramiv(shaderProgramID, GL_INFO_LOG_LENGTH, &bufferLength);
-        
-        std::string error;
-        error.resize(static_cast<std::uint32_t>(bufferLength));
-
-        glGetProgramInfoLog(shaderProgramID, bufferLength, &bufferLength, error.data());
-
-        std::cerr << "Program linking error:\n" << error << "\n";
-
-        __debugbreak();
-    };
-
-    glDeleteShader(vertexShaderID);
-    glDeleteShader(fragmentShaderID);
-
-    #pragma endregion
-
+    const ShaderProgram shaderProgram = ShaderProgram("Shaders\\VertexShader.glsl", "Shaders\\FragmentShader.glsl");
 
 
     static std::string textToDraw = "Type anything!";
@@ -680,7 +538,7 @@ int main()
 
         textToDraw.append(1, actualKey);
     });
-    
+
 
     while(glfwWindowShouldClose(glfwWindow) == false)
     {
@@ -693,7 +551,7 @@ int main()
         fontTexture.Bind(0);
 
 
-        fontTexture.Draw(shaderProgramID, textToDraw);
+        fontTexture.Draw(shaderProgram.GetProgramID(), textToDraw);
 
         glfwSwapBuffers(glfwWindow);
 
