@@ -3,11 +3,16 @@
 layout(location = 0) in vec2 VertexPosition;
 
 
-layout(std430, binding = 0) readonly buffer TextureCoordinateInput
+layout(std430, binding = 0) readonly buffer Input
 {
-    uint NumberOfVertices;
     uint GlyphWidth;
-    vec2 TextureCoordinate[];
+    uint GlyphHeight;
+
+    uint TextureWidth;
+    uint TextureHeight;
+
+    // No 8-bit integers, so I'm using an int
+    int Characters[];
 };
 
 
@@ -20,9 +25,62 @@ uniform mat4 TextTransform = mat4(1.0f);
 out vec2 VertexShaderTextureCoordinateOutput;
 
 
+
 void main()
 {
-    VertexShaderTextureCoordinateOutput  = TextureCoordinate[gl_VertexID + (gl_InstanceID * NumberOfVertices)];
+    // Subtract 32 (The space character) from the selected character to get the correct character index
+    const int glyphIndex = Characters[gl_InstanceID] - 32;
+
+    const uint columns = TextureWidth / GlyphWidth;
+    const uint rows = TextureHeight / GlyphHeight;
+
+    // Convert 1D character to 2D.
+    const uint glpyhX = glyphIndex % columns;
+    const uint glpyhY = glyphIndex / columns;
+
+    // Calculate texutre sampling bounds
+    const float textureCoordinateLeft = float(glpyhX) / float(columns);
+    const float textureCoordinateBottom = float((2 - glpyhY)) / float(rows);
+
+    const float textureCoordinateRight = float(glpyhX + 1) / float(columns);
+    const float textureCoordinateTop = float((2 - glpyhY) + 1) / float(rows);
+
+
+    // Create a texture sampling point
+    switch(gl_VertexID)
+    {
+        // Top left
+        case 0:
+        {
+            VertexShaderTextureCoordinateOutput = vec2(textureCoordinateLeft, textureCoordinateTop);
+            break;
+        };
+
+        // Top right      
+        case 3:
+        case 1:
+        {
+            VertexShaderTextureCoordinateOutput = vec2(textureCoordinateRight, textureCoordinateTop);
+            break;
+        };
+
+        // Bottom left    
+        case 2:
+        case 5:
+        {
+            VertexShaderTextureCoordinateOutput = vec2(textureCoordinateLeft, textureCoordinateBottom);
+            break;
+        };
+
+        // Bottom right
+        case 4:
+        {
+            VertexShaderTextureCoordinateOutput = vec2(textureCoordinateRight, textureCoordinateBottom);
+            break;
+        };
+
+    };
+
 
    gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
 };

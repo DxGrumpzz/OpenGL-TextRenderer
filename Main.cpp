@@ -166,19 +166,18 @@ private:
     /// </summary>
     std::uint32_t _rows = 0;
 
-    
+
     std::uint32_t _vao = 0;
-    
+
     std::uint32_t _glyphVertexPositionsVBO = 0;
 
-    mutable std::uint32_t _glyphTextureCoordinatesSSBO = 0;
+    mutable std::uint32_t _inputSSBO = 0;
 
 
     /// <summary>
     /// Character capacity, how many character we can write before we need to reallocate the buffer
     /// </summary>
     mutable std::uint32_t _capacity = 0;
-
 
 
 public:
@@ -232,17 +231,20 @@ public:
         glEnableVertexArrayAttrib(_vao, 0);
 
 
-        _glyphTextureCoordinatesSSBO = AllocateAndBindBuffer(12, _glyphWidth, _glyphHeight);
+        _inputSSBO = AllocateAndBindBuffer(_capacity,
+                                           _fontSpriteWidth, _fontSpriteHeight,
+                                           _glyphWidth, _glyphHeight);
 
-        // TODO: Optimization, try to send characters instead of texture coordinates
         // TODO: Add chroma key
+        // TODO: OPtimization, cache the matrix and transform
     };
+
 
 
     ~FontSprite()
     {
         glDeleteBuffers(1, &_glyphVertexPositionsVBO);
-        glDeleteBuffers(1, &_glyphTextureCoordinatesSSBO);
+        glDeleteBuffers(1, &_inputSSBO);
 
         glDeleteTextures(1, &_textureID);
 
@@ -260,12 +262,31 @@ public:
         glBindVertexArray(_vao);
 
         glBindBuffer(GL_ARRAY_BUFFER, _glyphVertexPositionsVBO);
-        glBindBuffer(GL_ARRAY_BUFFER, _glyphTextureCoordinatesSSBO);
+      
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _inputSSBO);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _inputSSBO);
     };
 
 
     void Draw(const std::uint32_t shaderProgramID, const std::string& text) const
     {
+        if(text.empty() == true)
+            return;
+
+        // Allocate buffer memory if necessary
+        if(text.size() > _capacity)
+        {
+            const std::uint32_t newSSBOBuffer = AllocateAndBindBuffer(static_cast<std::uint32_t>(text.size()) + (_capacity / 2),
+                                                                      _fontSpriteWidth, _fontSpriteHeight,
+                                                                      _glyphWidth, _glyphHeight);
+
+            // Delete old buffer
+            glDeleteBuffers(1, &_inputSSBO);
+
+            _inputSSBO = newSSBOBuffer;
+        };
+
+
         glUseProgram(shaderProgramID);
 
 
@@ -279,7 +300,6 @@ public:
             __debugbreak();
 
 
-        // TODO: Optimization, chache projection, and transform matrices
         // Calculate projection and transform
         const glm::mat4 screenSpaceProjection = glm::ortho(0.0f, static_cast<float>(WindowWidth), static_cast<float>(WindowHeight), 0.0f, -1.0f, 1.0f);
         const glm::mat4 transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
@@ -289,34 +309,16 @@ public:
         glUniformMatrix4fv(transformLocation, 1, false, glm::value_ptr(transform));
 
 
-        // Allocate buffer memory if necessary
-        if(text.size() > _capacity)
-        {
-            const std::uint32_t newSSBOBuffer = AllocateAndBindBuffer(static_cast<std::uint32_t>(text.size()) + (_capacity / 2), _glyphWidth, _glyphHeight);
-
-            // Delete old buffer
-            glDeleteBuffers(1, &_glyphTextureCoordinatesSSBO);
-
-            _glyphTextureCoordinatesSSBO = newSSBOBuffer;
-        };
-
-
-        if(text.empty() == true)
-            return;
-
-
-        // Calculate, and copy texutre coordinates of text's characters
+        // Copy the texts' character to the SSBo
         for(std::size_t index = 0;
             const auto & character : text)
         {
-            const auto textureCoordinates = CreateTextureCoordinatesFromCharracter(character,
-                                                                                   _fontSpriteWidth, _fontSpriteHeight,
-                                                                                   _glyphWidth, _glyphHeight);
+            const std::uint32_t& characterAsInt = character;
 
-            glNamedBufferSubData(_glyphTextureCoordinatesSSBO, static_cast<std::int64_t>((sizeof(std::int32_t) * 2) + (sizeof(textureCoordinates) * index)), sizeof(textureCoordinates), &textureCoordinates);
+            glNamedBufferSubData(_inputSSBO, (sizeof(std::int32_t) * 4) + (sizeof(std::int32_t) * index), sizeof(characterAsInt), &characterAsInt);
+
             index++;
         };
-
 
         glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
     };
@@ -384,12 +386,9 @@ private:
 
 
     std::uint32_t AllocateAndBindBuffer(const std::uint32_t characterCapacity,
-                                        const std::uint32_t glyphWidth, const std::uint32_t glyphHeight,
-                                        const std::uint32_t numberOfVertices = 6) const
+                                        const std::uint32_t textureWidth, const std::uint32_t textureHeight,
+                                        const std::uint32_t glyphWidth, const std::uint32_t glyphHeight) const
     {
-        // Ignore warning unused parameter
-        (void*)&glyphHeight;
-
         if(characterCapacity > _capacity)
             _capacity = characterCapacity;
 
@@ -402,14 +401,18 @@ private:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
 
         // Allocate SSBO memory for 2 32 bit ints, and 'n' of texture coordinate arrays
-        glNamedBufferData(ssbo, static_cast<std::int64_t>(sizeof(std::uint32_t) + sizeof(glyphWidth) + (sizeof(std::array<float, 12>) * _capacity)), nullptr, GL_DYNAMIC_DRAW);
-
-
-        // Number of vertices
-        glNamedBufferSubData(ssbo, 0, sizeof(numberOfVertices), &numberOfVertices);
+        // glNamedBufferData(ssbo, static_cast<std::int64_t>(sizeof(std::uint32_t) * 2 + (sizeof(std::array<float, 12>) * _capacity)), nullptr, GL_DYNAMIC_DRAW);
+        glNamedBufferData(ssbo, static_cast<std::int64_t>((sizeof(std::uint32_t) * 4) + (sizeof(std::uint32_t) * _capacity)), nullptr, GL_DYNAMIC_DRAW);
 
         // Glyph width
-        glNamedBufferSubData(ssbo, static_cast<std::int64_t>(sizeof(std::int32_t)), sizeof(glyphWidth), &glyphWidth);
+        glNamedBufferSubData(ssbo, sizeof(std::uint32_t) * 0, sizeof(glyphWidth), &glyphWidth);
+        // Glyph height
+        glNamedBufferSubData(ssbo, sizeof(std::uint32_t) * 1, sizeof(glyphHeight), &glyphHeight);
+
+        // Texture width
+        glNamedBufferSubData(ssbo, sizeof(std::uint32_t) * 2, sizeof(textureWidth), & textureWidth);
+        // Texture height                                      
+        glNamedBufferSubData(ssbo, sizeof(std::uint32_t) * 3, sizeof(textureHeight), & textureHeight);
 
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
@@ -417,49 +420,9 @@ private:
         return ssbo;
     };
 
-
-    constexpr std::array<float, 12> CreateTextureCoordinatesFromCharracter(const char character,
-                                                                           const std::uint32_t textureWidth, const std::uint32_t textureHeight,
-                                                                           const std::uint32_t glyphWidth, const std::uint32_t glyphHeight) const
-    {
-        // Subtract 32 (The space character) from the selected character to get the correct character index
-        const int glyphIndex = character - ' ';
-
-        const std::uint32_t columns = textureWidth / glyphWidth;
-        const std::uint32_t rows = textureHeight / glyphHeight;
-
-        // Convert 1D character to 2D.
-        const std::uint32_t glpyhX = glyphIndex % columns;
-        const std::uint32_t glpyhY = glyphIndex / columns;
-
-        // Calculate texutre sampling bounds
-        const float textureCoordinateLeft = static_cast<float>(glpyhX) / static_cast<float>(columns);
-        const float textureCoordinateBottom = static_cast<float>((2 - glpyhY)) / static_cast<float>(rows);
-
-        const float textureCoordinateRight = static_cast<float>(glpyhX + 1) / static_cast<float>(columns);
-        const float textureCoordinateTop = static_cast<float>((2 - glpyhY) + 1) / static_cast<float>(rows);
-
-
-        const std::array<float, 12> glyphTextureCoordinates
-        {
-            // Top left
-            textureCoordinateLeft, textureCoordinateTop,
-            // Top right                           
-            textureCoordinateRight, textureCoordinateTop,
-            // Bottom left                         
-            textureCoordinateLeft, textureCoordinateBottom,
-
-            // Top right                           
-            textureCoordinateRight, textureCoordinateTop,
-            // Bottom right
-            textureCoordinateRight, textureCoordinateBottom,
-            // Bottom left
-            textureCoordinateLeft, textureCoordinateBottom,
-        };
-
-        return glyphTextureCoordinates;
-    };
 };
+
+
 
 
 int main()
@@ -471,12 +434,16 @@ int main()
 
     SetupOpenGL();
 
-    const FontSprite fontTexture = FontSprite(13, 24, L"Resources\\Consolas13x24.bmp");
+    const FontSprite fontSprite = FontSprite(13, 24, L"Resources\\Consolas13x24.bmp");
+
+
 
     const ShaderProgram shaderProgram = ShaderProgram("Shaders\\FontSpriteVertexShader.glsl", "Shaders\\FontSpriteFragmentShader.glsl");
 
 
     static std::string textToDraw = "Type anything!";
+
+
 
     // Keyboard input handler
     glfwSetKeyCallback(glfwWindow, [](GLFWwindow* glfwWindow, int key, int scanCode, int actions, int modBits) noexcept
@@ -547,13 +514,12 @@ int main()
         glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
+        fontSprite.Bind();
 
-        fontTexture.Bind(0);
-
-
-        fontTexture.Draw(shaderProgram.GetProgramID(), textToDraw);
-
+        fontSprite.Draw(shaderProgram.GetProgramID(), textToDraw);
+        
         glfwSwapBuffers(glfwWindow);
 
     };
+
 };
