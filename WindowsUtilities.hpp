@@ -510,6 +510,9 @@ namespace WindowsUtilities
     };
 
 
+    #pragma warning(push)
+    // Ignore unused parameter warning
+    #pragma warning(disable: 4100)
     static void Assert(const bool expression, const std::string_view& message, const std::source_location sourceLocation = std::source_location::current())
     {
         #ifdef _DEBUG
@@ -526,6 +529,7 @@ namespace WindowsUtilities
 
         #endif
     };
+    #pragma warning(pop)
 
 
     #pragma endregion
