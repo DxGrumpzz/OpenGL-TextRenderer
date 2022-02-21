@@ -11,6 +11,10 @@ layout(std430, binding = 0) readonly buffer Input
     uint TextureWidth;
     uint TextureHeight;
 
+    vec4 ChromaKey;
+
+    vec4 TextColour;
+
     // No 8-bit integers, so I'm using an int
     int Characters[];
 };
@@ -23,6 +27,8 @@ uniform mat4 TextTransform = mat4(1.0f);
 
 
 out vec2 VertexShaderTextureCoordinateOutput;
+out vec4 VertexShaderChromaKeyOutput;
+out vec4 VertexShaderTextColourOutput;
 
 
 
@@ -78,9 +84,12 @@ void main()
             VertexShaderTextureCoordinateOutput = vec2(textureCoordinateRight, textureCoordinateBottom);
             break;
         };
-
     };
 
 
+    VertexShaderTextColourOutput = TextColour;
+    VertexShaderChromaKeyOutput = ChromaKey;
+
    gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
+
 };

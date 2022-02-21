@@ -14,6 +14,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
+#include <memory>
 
 #pragma comment(lib, "gdiplus.lib")
 
@@ -235,7 +236,8 @@ public:
                                            _fontSpriteWidth, _fontSpriteHeight,
                                            _glyphWidth, _glyphHeight);
 
-        // TODO: Add chroma key
+        // TODO: Refactor
+        // TODO: Create a (better) SSBO wrapper
         // TODO: OPtimization, cache the matrix and transform
     };
 
@@ -262,13 +264,13 @@ public:
         glBindVertexArray(_vao);
 
         glBindBuffer(GL_ARRAY_BUFFER, _glyphVertexPositionsVBO);
-      
+
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, _inputSSBO);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _inputSSBO);
     };
 
 
-    void Draw(const std::uint32_t shaderProgramID, const std::string& text) const
+    void Draw(const std::uint32_t shaderProgramID, const std::string& text, const glm::vec4& textColour = { 0.0f, 0.0f, 0.0f, 1.0f }) const
     {
         if(text.empty() == true)
             return;
@@ -308,17 +310,24 @@ public:
         glUniformMatrix4fv(projectionLocation, 1, false, glm::value_ptr(screenSpaceProjection));
         glUniformMatrix4fv(transformLocation, 1, false, glm::value_ptr(transform));
 
+        
 
-        // Copy the texts' character to the SSBo
+        // Set text colour
+        glNamedBufferSubData(_inputSSBO, (sizeof(std::uint32_t) * 4) + (sizeof(glm::vec4) * 1), sizeof(textColour), &textColour);
+
+
+        // Copy the texts' character to the SSBO
         for(std::size_t index = 0;
             const auto & character : text)
         {
             const std::uint32_t& characterAsInt = character;
 
-            glNamedBufferSubData(_inputSSBO, (sizeof(std::int32_t) * 4) + (sizeof(std::int32_t) * index), sizeof(characterAsInt), &characterAsInt);
+            glNamedBufferSubData(_inputSSBO, (sizeof(std::int32_t) * 4) + (sizeof(glm::vec4) * 2) + (sizeof(std::int32_t) * index), sizeof(characterAsInt), &characterAsInt);
 
             index++;
         };
+
+
 
         glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
     };
@@ -400,19 +409,35 @@ private:
         glCreateBuffers(1, &ssbo);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
 
+
         // Allocate SSBO memory for 2 32 bit ints, and 'n' of texture coordinate arrays
-        // glNamedBufferData(ssbo, static_cast<std::int64_t>(sizeof(std::uint32_t) * 2 + (sizeof(std::array<float, 12>) * _capacity)), nullptr, GL_DYNAMIC_DRAW);
-        glNamedBufferData(ssbo, static_cast<std::int64_t>((sizeof(std::uint32_t) * 4) + (sizeof(std::uint32_t) * _capacity)), nullptr, GL_DYNAMIC_DRAW);
+        glNamedBufferData(ssbo, (sizeof(std::uint32_t) * 4) + (sizeof(glm::vec4) * 2) + (sizeof(std::uint32_t) * _capacity), nullptr, GL_DYNAMIC_DRAW);
+
+        std::size_t bytesWritten = 0;
 
         // Glyph width
-        glNamedBufferSubData(ssbo, sizeof(std::uint32_t) * 0, sizeof(glyphWidth), &glyphWidth);
+        bytesWritten += NamedBufferSubData(ssbo, 0, sizeof(glyphWidth), &glyphWidth);
+
         // Glyph height
-        glNamedBufferSubData(ssbo, sizeof(std::uint32_t) * 1, sizeof(glyphHeight), &glyphHeight);
+        bytesWritten += NamedBufferSubData(ssbo, bytesWritten, sizeof(glyphHeight), &glyphHeight);
 
         // Texture width
-        glNamedBufferSubData(ssbo, sizeof(std::uint32_t) * 2, sizeof(textureWidth), & textureWidth);
+        bytesWritten += NamedBufferSubData(ssbo, bytesWritten, sizeof(textureWidth), &textureWidth);
+
         // Texture height                                      
-        glNamedBufferSubData(ssbo, sizeof(std::uint32_t) * 3, sizeof(textureHeight), & textureHeight);
+        bytesWritten += NamedBufferSubData(ssbo, bytesWritten, sizeof(textureHeight), &textureHeight);
+
+
+        constexpr glm::vec4 chromaKey = { 1.0f, 1.0f, 1.0f, 1.0f };
+        
+        // Chroma key                                      
+        bytesWritten += NamedBufferSubData(ssbo, bytesWritten, sizeof(glm::vec4), &chromaKey);
+
+
+        constexpr glm::vec4 textColour = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+        // Text colour
+        bytesWritten += NamedBufferSubData(ssbo, bytesWritten, sizeof(glm::vec4), &textColour);
 
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
@@ -420,8 +445,15 @@ private:
         return ssbo;
     };
 
-};
 
+    std::size_t NamedBufferSubData(std::uint32_t buffer, std::int64_t offset, std::int64_t size, const void* data) const
+    {
+        glNamedBufferSubData(buffer, offset, size, data);
+
+        return size;
+    };
+
+};
 
 
 
@@ -516,8 +548,10 @@ int main()
 
         fontSprite.Bind();
 
-        fontSprite.Draw(shaderProgram.GetProgramID(), textToDraw);
-        
+        fontSprite.Draw(shaderProgram.GetProgramID(), 
+                        textToDraw,
+                        { 1.0f, 0.0f, 0.0f, 1.0f });
+
         glfwSwapBuffers(glfwWindow);
 
     };

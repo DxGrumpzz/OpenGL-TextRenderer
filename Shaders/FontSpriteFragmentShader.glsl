@@ -2,17 +2,23 @@
 
 
 in vec2 VertexShaderTextureCoordinateOutput;
+in vec4 VertexShaderChromaKeyOutput;
+in vec4 VertexShaderTextColourOutput;
 
 uniform sampler2D Texutre;
 
 out vec4 OutputColour;
 
 
+
 void main()
 {
     const vec4 pixel = texture(Texutre, VertexShaderTextureCoordinateOutput);
 
-    // OutputColour = vec4(1.0f, 0.0f, 0.0f, 1.0f);
+    // If the current pixel matches the chroma key colour..
+    if(pixel.rgb == VertexShaderChromaKeyOutput.rgb)
+        // Then throw pixel away
+        discard;
 
-    OutputColour = pixel;
+    OutputColour = VertexShaderTextColourOutput;
 };
