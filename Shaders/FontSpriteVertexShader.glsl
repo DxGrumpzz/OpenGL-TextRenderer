@@ -5,6 +5,18 @@ layout(location = 0) in vec2 VertexPosition;
 
 layout(std430, binding = 0) readonly buffer Input
 {
+    float float_off_0;
+    float float_off_4;
+
+    vec4 vec4_off_16;
+    
+    float[10] float_off_32;
+    
+    vec2[2] vec2_off_72;
+
+    float[] float_off_80;
+
+/*
     uint GlyphWidth;
     uint GlyphHeight;
 
@@ -16,7 +28,8 @@ layout(std430, binding = 0) readonly buffer Input
     vec4 TextColour;
 
     // No 8-bit integers, so I'm using an int
-    int Characters[];
+    uint Characters[];
+    */
 };
 
 
@@ -34,8 +47,16 @@ out vec4 VertexShaderTextColourOutput;
 
 void main()
 {
+    // VertexShaderTextColourOutput = vec4_off_0+uint_off_16+ vec4_off_32 +vec4_off_48 +uint_off_64+uint_off_68;
+
+    VertexShaderTextColourOutput = vec4_off_16 + float_off_0;
+
+   gl_Position = Projection * TextTransform * VertexShaderTextColourOutput;
+
+/*
+
     // Subtract 32 (The space character) from the selected character to get the correct character index
-    const int glyphIndex = Characters[gl_InstanceID] - 32;
+    const uint glyphIndex = Characters[gl_InstanceID] - 32;
 
     const uint columns = TextureWidth / GlyphWidth;
     const uint rows = TextureHeight / GlyphHeight;
@@ -91,5 +112,6 @@ void main()
     VertexShaderChromaKeyOutput = ChromaKey;
 
    gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
+   */
 
 };

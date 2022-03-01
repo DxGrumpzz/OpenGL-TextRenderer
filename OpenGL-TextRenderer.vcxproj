@@ -100,7 +100,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <SupportJustMyCode>true</SupportJustMyCode>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
@@ -142,7 +142,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <SupportJustMyCode>true</SupportJustMyCode>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>

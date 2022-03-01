@@ -15,6 +15,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
 #include <memory>
+#include <map>
+#include <unordered_map>
+#include <numeric>
 
 #pragma comment(lib, "gdiplus.lib")
 
@@ -186,7 +189,7 @@ public:
     FontSprite(const std::uint32_t glyphWidth,
                const std::uint32_t glyphHeight,
                const std::wstring_view& texturePath,
-               const std::uint32_t capacity = 12) :
+               const std::uint32_t capacity = 32) :
         _glyphWidth (glyphWidth),
         _glyphHeight(glyphHeight),
         _capacity(capacity)
@@ -269,9 +272,31 @@ public:
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _inputSSBO);
     };
 
-
-    void Draw(const std::uint32_t shaderProgramID, const std::string& text, const glm::vec4& textColour = { 0.0f, 0.0f, 0.0f, 1.0f }) const
+    #pragma warning(disable: 4100)
+    void Draw(const ShaderProgram& shaderProgram, const std::string& text, const glm::vec4& textColour = { 0.0f, 0.0f, 0.0f, 1.0f }) const
     {
+        shaderProgram.Bind();
+
+        float float_off_0 = 1.0f;
+        glNamedBufferSubData(_inputSSBO, 0, sizeof(float_off_0), &float_off_0);
+
+        float float_off_4 = 2.0f;
+        glNamedBufferSubData(_inputSSBO, 4, sizeof(float_off_4), &float_off_4);
+
+        glm::vec4 vec4_off_16 = glm::vec4(3.0f, 4.0f, 5.0f, 6.0f);
+        glNamedBufferSubData(_inputSSBO, 16, sizeof(glm::vec4), &vec4_off_16);
+
+        float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
+        glNamedBufferSubData(_inputSSBO, 32, sizeof(float_off_32), &float_off_32);
+
+        float float_off_72[12] = { 17.0f, 18.0f, 19.0f, 20.0f, 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f };
+        glNamedBufferSubData(_inputSSBO, 72, sizeof(float_off_72), &float_off_72);
+
+
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
+
+        
+        /*
         if(text.empty() == true)
             return;
 
@@ -289,17 +314,7 @@ public:
         };
 
 
-        glUseProgram(shaderProgramID);
-
-
-        // Find uniform locations
-        const int projectionLocation = glGetUniformLocation(shaderProgramID, "Projection");
-        if(projectionLocation == -1)
-            __debugbreak();
-
-        const int transformLocation = glGetUniformLocation(shaderProgramID, "TextTransform");
-        if(transformLocation == -1)
-            __debugbreak();
+        shaderProgram.Bind();
 
 
         // Calculate projection and transform
@@ -307,10 +322,9 @@ public:
         const glm::mat4 transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
 
         // Update uniforms
-        glUniformMatrix4fv(projectionLocation, 1, false, glm::value_ptr(screenSpaceProjection));
-        glUniformMatrix4fv(transformLocation, 1, false, glm::value_ptr(transform));
+        shaderProgram.SetMatrix4("Projection", screenSpaceProjection);
+        shaderProgram.SetMatrix4("TextTransform", transform);
 
-        
 
         // Set text colour
         glNamedBufferSubData(_inputSSBO, (sizeof(std::uint32_t) * 4) + (sizeof(glm::vec4) * 1), sizeof(textColour), &textColour);
@@ -330,6 +344,8 @@ public:
 
 
         glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
+        */
+
     };
 
 
@@ -409,7 +425,6 @@ private:
         glCreateBuffers(1, &ssbo);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
 
-
         // Allocate SSBO memory for 2 32 bit ints, and 'n' of texture coordinate arrays
         glNamedBufferData(ssbo, (sizeof(std::uint32_t) * 4) + (sizeof(glm::vec4) * 2) + (sizeof(std::uint32_t) * _capacity), nullptr, GL_DYNAMIC_DRAW);
 
@@ -429,7 +444,7 @@ private:
 
 
         constexpr glm::vec4 chromaKey = { 1.0f, 1.0f, 1.0f, 1.0f };
-        
+
         // Chroma key                                      
         bytesWritten += NamedBufferSubData(ssbo, bytesWritten, sizeof(glm::vec4), &chromaKey);
 
@@ -455,10 +470,184 @@ private:
 
 };
 
+/*
+layout(std430, binding = 0) readonly buffer Input
+{
+    uint GlyphWidth;
+    uint GlyphHeight;
+
+    uint TextureWidth;
+    uint TextureHeight;
+
+    vec4 ChromaKey;
+
+    vec4 TextColour;
+
+    // No 8-bit integers, so I'm using an int
+    uint Characters[];
+};
+*/
+
+
+struct Element
+{
+public:
+
+    std::string Name = "";
+
+    std::size_t SizeInBytes = 0;
+
+    std::size_t Count = 0;
+
+    std::size_t Padding = 0;
+    std::size_t Offset = 0;
+
+
+public:
+    Element(const std::string& name, const std::size_t sizeInBytes, std::size_t count = 1) :
+        Name(name),
+        SizeInBytes(sizeInBytes),
+        Count(count)
+    {
+        wt::Assert(SizeInBytes >= 4, "Cannot create SSBO element with size less than 4 bytes");
+    };
+
+};
+
+
+void SSBO_Test()
+{
+    std::vector<Element> elements;
+
+    elements.emplace_back("ChromaKey", sizeof(glm::vec4)); // 0
+
+    elements.emplace_back("GlyphWidth", sizeof(std::uint32_t)); // 16
+    // padding - 12
+    elements.emplace_back("ChromaKey", sizeof(glm::vec4)); // 20  (w/padding 20 + 12 = 32 )
+
+    elements.emplace_back("ChromaKey2", sizeof(glm::vec4)); // 36  (w/padding 48)
+
+    elements.emplace_back("GlyphWidth", sizeof(std::uint32_t)); // 42 (w/padding 64)
+
+    elements.emplace_back("GlyphWidth2", sizeof(std::uint32_t)); // 46 (w/padding 68)
+
+
+    // elements.emplace_back("GlyphWidth", sizeof(std::uint32_t));
+    // elements.emplace_back("GlyphHeight", sizeof(std::uint32_t));
+
+    // elements.emplace_back("TextureWidth", sizeof(std::uint32_t));
+    // elements.emplace_back("TextureHeight", sizeof(std::uint32_t));
+
+    // elements.emplace_back("ChromaKey", sizeof(glm::vec4));
+    // elements.emplace_back("TextColour", sizeof(glm::vec4));
+
+    // static constexpr std::uint32_t characters = 8;
+    // elements.emplace_back("Characters", sizeof(uint32_t), characters);
+
+
+    const auto largestElementIterator = std::max_element(elements.cbegin(), elements.cend(),
+                                                         [](const Element& element1, const Element& element2)
+    {
+        const bool result = element1.SizeInBytes < element2.SizeInBytes;
+
+        return result;
+    });
+
+    const std::size_t largestElementSize = largestElementIterator->SizeInBytes;
+
+
+    #pragma warning(push)
+    #pragma warning(disable: 4189)
+
+    std::size_t offset = 0;
+
+    // Calculate offsets without padding
+    for(Element& element : elements)
+    {
+        element.Offset = offset;
+
+        offset = element.Offset + element.SizeInBytes;
+    };
+
+
+
+    std::size_t computedBytes = 0;
+
+    for(std::size_t i = 0; i < elements.size() - 1; ++i)
+    {
+        Element& currentElement = elements[i];
+        Element& nextElement = elements[i + 1];
+
+        const std::size_t offsetDifference = nextElement.Offset - currentElement.Offset;
+
+        if(offsetDifference < largestElementSize)
+        {
+            const std::size_t padding = largestElementSize - offsetDifference;
+
+            currentElement.Padding = padding;
+
+            nextElement.Offset = currentElement.SizeInBytes + currentElement.Padding + currentElement.Offset;
+
+
+
+            std::size_t _offset = nextElement.Offset;
+
+            for(std::size_t j = i + 1; j < elements.size(); ++j)
+            {
+                Element& element = elements[j];
+
+                element.Offset = _offset;
+
+                _offset = element.Offset + element.SizeInBytes;
+            };
+
+            int _ = 0;
+        };
+
+        int _ = 0;
+    };
+
+    int _ = 0;
+
+    /*
+    std::size_t previousComputedTotalBytes = 0;
+
+    std::int64_t byteCount = largestElementSize;
+
+    for(std::size_t i = 0; i < elements.size() - 1; i++)
+    {
+        const Element& element = elements[i];
+
+        const std::size_t computedBytes = (element.SizeInBytes * element.Count);
+        const std::size_t computedTotalBytes = previousComputedTotalBytes + (element.SizeInBytes * element.Count);
+
+        byteCount -= computedBytes;
+
+        if(byteCount == 0)
+        {
+            byteCount = largestElementSize;
+        }
+        else if(byteCount < 0)
+        {
+            const std::size_t padding = computedBytes - (computedTotalBytes - computedBytes);
+
+            int _ = 0;
+        };
+
+        previousComputedTotalBytes = computedTotalBytes;
+    };
+    */
+
+
+
+    #pragma warning(pop)
+};
 
 
 int main()
 {
+    // SSBO_Test();
+
     constexpr std::uint32_t initialWindowWidth = 800;
     constexpr std::uint32_t initialWindowHeight = 600;
 
@@ -466,11 +655,69 @@ int main()
 
     SetupOpenGL();
 
+
     const FontSprite fontSprite = FontSprite(13, 24, L"Resources\\Consolas13x24.bmp");
 
 
 
     const ShaderProgram shaderProgram = ShaderProgram("Shaders\\FontSpriteVertexShader.glsl", "Shaders\\FontSpriteFragmentShader.glsl");
+
+    fontSprite.Draw(shaderProgram, "");
+
+
+    int numberOfActiveSSBOs = 0;
+    glGetProgramInterfaceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, GL_ACTIVE_RESOURCES, &numberOfActiveSSBOs);
+
+
+    GLint ssboIndex = glGetProgramResourceIndex(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, "Input");
+
+    int ssboVariableMaxLength = 0;
+    glGetProgramInterfaceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, GL_MAX_NAME_LENGTH, &ssboVariableMaxLength);
+
+    (void*)&ssboIndex;
+
+
+    GLenum numberOfActiveVariablesProperty = GL_NUM_ACTIVE_VARIABLES;
+    GLint numberOfVariables = 0;
+
+    glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &numberOfActiveVariablesProperty, 1, nullptr, &numberOfVariables);
+
+
+
+    GLenum activeVariablesProperty = GL_ACTIVE_VARIABLES;
+    std::vector<GLint> variableIndices = std::vector<GLint> (numberOfVariables);
+
+    (void*)&activeVariablesProperty;
+
+    glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &activeVariablesProperty, variableIndices.size(), nullptr, variableIndices.data());
+
+
+    GLenum offsetProperty = GL_OFFSET;
+    std::vector<std::pair<std::string, GLint>> variableOffsets = std::vector<std::pair<std::string, GLint>>(numberOfVariables);
+
+    GLenum arraySizeProperty = GL_ARRAY_SIZE;
+
+    for(std::size_t i = 0; i < variableIndices.size(); i++)
+    {
+        std::string name;
+        name.reserve(ssboVariableMaxLength);
+
+        glGetProgramResourceName(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], ssboVariableMaxLength, nullptr, name.data());
+        variableOffsets[i].first = std::move(name);
+
+        glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], 1, &offsetProperty, sizeof(decltype(variableOffsets)::value_type::second), nullptr, &variableOffsets[i].second);
+
+        int arraySize = 0;
+        glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], 1, &arraySizeProperty, sizeof(arraySize), nullptr, &arraySize);
+
+        // If the variable is an array..
+        if(arraySize == 0 || arraySize != 1)
+        {
+            int _ = 0;
+        };
+
+        int _ = 0;
+    };
 
 
     static std::string textToDraw = "Type anything!";
@@ -548,7 +795,7 @@ int main()
 
         fontSprite.Bind();
 
-        fontSprite.Draw(shaderProgram.GetProgramID(), 
+        fontSprite.Draw(shaderProgram,
                         textToDraw,
                         { 1.0f, 0.0f, 0.0f, 1.0f });
 

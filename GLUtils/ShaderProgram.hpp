@@ -46,6 +46,8 @@ public:
 
         glDeleteShader(fragmentShaderID);
         glDeleteShader(vertexShaderID);
+
+        Bind();
     };
 
     ShaderProgram(const ShaderProgram&) = delete;
