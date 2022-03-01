@@ -14,7 +14,7 @@ layout(std430, binding = 0) readonly buffer Input
     
     vec2[2] vec2_off_72;
 
-    float[] float_off_80;
+    float[] float_off_88;
 
 /*
     uint GlyphWidth;
