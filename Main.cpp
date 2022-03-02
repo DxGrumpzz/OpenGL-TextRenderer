@@ -124,6 +124,174 @@ void SetupOpenGL()
 };
 
 
+struct SSBOElement
+{
+public:
+
+    std::size_t Count = 0;
+
+    std::size_t Offset = 0;
+
+
+public:
+    SSBOElement(const std::size_t offset, const std::size_t count = 1) :
+        Count(count),
+        Offset(offset)
+    {
+    };
+
+};
+
+
+class ShaderStorageBuffer
+{
+    std::unordered_map<std::string, SSBOElement> _variableOffsets { };
+
+    std::uint32_t _bufferID = 0;
+
+    std::uint32_t _bufferBindingIndex = 0;
+
+public:
+
+
+    ShaderStorageBuffer(const std::string_view& ssboName, const ShaderProgram& shaderProgram, const std::size_t sizeInBytes, std::uint32_t bufferBindingIndex = 0) :
+        _bufferBindingIndex(bufferBindingIndex)
+    {
+        const bool queryResult = QuerySSBOData(ssboName, shaderProgram);
+
+        if(queryResult == false)
+            return;
+
+        glCreateBuffers(1, &_bufferID);
+        glNamedBufferData(_bufferID, sizeInBytes, nullptr, GL_DYNAMIC_DRAW);
+
+        Bind();
+
+    };
+
+
+public:
+
+    void Bind() const
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _bufferID);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _bufferBindingIndex, _bufferID);
+    };
+
+    template<typename T>
+    void SetValue(const std::string_view& name, const T& value) const
+    {
+        const auto findResult = _variableOffsets.find(name.data());
+
+        wt::Assert(findResult != _variableOffsets.end(), [&]()
+        {
+            return std::string("No such variable name \"").append(name).append("\"");
+        });
+
+        Bind();
+
+        const SSBOElement& ssboElement = findResult->second;
+
+        const std::size_t& offset = ssboElement.Offset;
+
+        glNamedBufferSubData(_bufferID, offset, sizeof(T), &value);
+    };
+
+
+private:
+
+    bool QuerySSBOData(const std::string_view& ssboName, const ShaderProgram& shaderProgram)
+    {
+        // TODO: Add error checking
+
+        // Get SSBO index
+        GLint ssboIndex = glGetProgramResourceIndex(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboName.data());
+
+        const bool assertResult = wt::Assert(ssboIndex != -1, [&]()
+        {
+            return std::string("No such SSBO \"").append(ssboName).append("\" ").append("on program \"").append(std::to_string(shaderProgram.GetProgramID()).append("\""));
+        });
+
+        if(assertResult == false)
+            return false;
+
+        // Get the longest variable name in the SSBO
+        int ssboVariableMaxLength = 0;
+        glGetProgramInterfaceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, GL_MAX_NAME_LENGTH, &ssboVariableMaxLength);
+
+
+        // Get number of active SSBO variables
+        static constexpr GLenum numberOfActiveVariablesProperty = GL_NUM_ACTIVE_VARIABLES;
+        GLint numberOfVariables = 0;
+
+        glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &numberOfActiveVariablesProperty, 1, nullptr, &numberOfVariables);
+
+
+        // Get SSBO variable indices
+        static constexpr  GLenum activeVariablesProperty = GL_ACTIVE_VARIABLES;
+        std::vector<GLint> variableIndices = std::vector<GLint> (numberOfVariables);
+
+        _variableOffsets.reserve(numberOfVariables);
+
+        glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &activeVariablesProperty, numberOfVariables, nullptr, variableIndices.data());
+
+
+        // Get SSBO variable offsets
+        static constexpr GLenum offsetProperty = GL_OFFSET;
+
+        static constexpr GLenum arraySizeProperty = GL_ARRAY_SIZE;
+
+        static constexpr GLenum nameLengthProperty = GL_NAME_LENGTH;
+
+
+        for(std::size_t i = 0; i < variableIndices.size(); i++)
+        {
+            // Get SSBO variable array size
+            int arraySize = 0;
+            glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], 1, &arraySizeProperty, sizeof(arraySize), nullptr, &arraySize);
+
+            int nameBufferLength = 0;
+            glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], 1, &nameLengthProperty, sizeof(nameBufferLength), nullptr, &nameBufferLength);
+
+            // SSBO variable name
+            std::string name;
+            name.resize(static_cast<std::size_t>(nameBufferLength) - 1);
+
+            glGetProgramResourceName(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], nameBufferLength, nullptr, name.data());
+
+
+            GLint offset = 0;
+
+            // SSBO variable offset
+            glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], 1, &offsetProperty, sizeof(GLint), nullptr, &offset);
+
+            // If the variable is an array..
+            if(arraySize == 0 || arraySize != 1)
+            {
+                const std::size_t variableNameEnd = name.find('[');
+
+                _variableOffsets.insert(std::make_pair(std::string(name.cbegin(), name.cbegin() + variableNameEnd), SSBOElement(offset, arraySize)));
+            }
+            else
+            {
+                const std::size_t variableNameEnd = name.find('[');
+                if(variableNameEnd != name.npos)
+                {
+                    _variableOffsets.insert(std::make_pair(std::string(name.cbegin(), name.cbegin() + variableNameEnd), SSBOElement(offset, arraySize)));
+                }
+                else
+                    _variableOffsets.insert(std::make_pair(std::string(name.cbegin(), name.cend()), SSBOElement(offset, arraySize)));
+            };
+        };
+
+
+        return true;
+    };
+
+};
+
+
+
 /// <summary>
 /// Draw text from a textue
 /// </summary>
@@ -273,7 +441,7 @@ public:
     };
 
     #pragma warning(disable: 4100)
-    void Draw(const ShaderProgram& shaderProgram, const std::string& text, const std::unordered_map<std::string, GLint>& variableOffsets, const glm::vec4& textColour = { 0.0f, 0.0f, 0.0f, 1.0f }) const
+    void Draw(const ShaderProgram& shaderProgram, const std::string& text, const ShaderStorageBuffer& shaderStorageBuffer, const glm::vec4& textColour = { 0.0f, 0.0f, 0.0f, 1.0f }) const
     {
         shaderProgram.Bind();
 
@@ -293,27 +461,48 @@ public:
         //glNamedBufferSubData(_inputSSBO, 72, sizeof(float_off_72), &float_off_72);
 
 
+        #define nameof(x) std::string_view(#x)
+
+        shaderStorageBuffer.SetValue("float_off_0", 1.0f);
+        shaderStorageBuffer.SetValue("float_off_4", 2.0f);
+
+        shaderStorageBuffer.SetValue("vec4_off_16", glm::vec4(3.0f, 4.0f, 5.0f, 6.0f));
+
+        float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
+        shaderStorageBuffer.SetValue(nameof(float_off_32), float_off_32);
+
+        glm::vec2 vec2_off_72[2] = { {17.0f, 18.0f}, {19.0f, 20.0f} };
+        shaderStorageBuffer.SetValue(nameof(vec2_off_72), vec2_off_72);
+
+        float float_off_88[12] = { 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f, 29.0f, 30.0f, 31.0f, 32.0f };
+        shaderStorageBuffer.SetValue(nameof(float_off_88), float_off_88);
+
+        #undef nameof
+
+
+        /*
         #define nameof(x) std::string(#x)
 
         float float_off_0 = 1.0f;
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_0)), sizeof(float_off_0), &float_off_0);
+        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_0)).Offset, sizeof(float_off_0), &float_off_0);
 
         float float_off_4 = 2.0f;
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_4)), sizeof(float_off_4), &float_off_4);
+        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_4)).Offset, sizeof(float_off_4), &float_off_4);
 
         glm::vec4 vec4_off_16 = glm::vec4(3.0f, 4.0f, 5.0f, 6.0f);
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(vec4_off_16)), sizeof(glm::vec4), &vec4_off_16);
+        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(vec4_off_16)).Offset, sizeof(glm::vec4), &vec4_off_16);
 
         float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_32)), sizeof(float_off_32), &float_off_32);
+        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_32)).Offset, sizeof(float_off_32), &float_off_32);
 
         glm::vec2 vec2_off_72[2] = { {17.0f, 18.0f}, {19.0f, 20.0f} };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(vec2_off_72)), sizeof(vec2_off_72), &vec2_off_72);
+        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(vec2_off_72)).Offset, sizeof(vec2_off_72), &vec2_off_72);
 
         float float_off_88[12] = { 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f, 29.0f, 30.0f, 31.0f, 32.0f };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_88)), sizeof(float_off_88), &float_off_88);
+        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_88)).Offset, sizeof(float_off_88), &float_off_88);
 
         #undef nameof
+        */
 
         /*
         float float_off_0 = 1.0f;
@@ -512,32 +701,8 @@ private:
     };
 
 };
+ 
 
-
-struct Element
-{
-public:
-
-    std::string Name = "";
-
-    std::size_t SizeInBytes = 0;
-
-    std::size_t Count = 0;
-
-    std::size_t Padding = 0;
-    std::size_t Offset = 0;
-
-
-public:
-    Element(const std::string& name, const std::size_t sizeInBytes, std::size_t count = 1) :
-        Name(name),
-        SizeInBytes(sizeInBytes),
-        Count(count)
-    {
-        wt::Assert(SizeInBytes >= 4, "Cannot create SSBO element with size less than 4 bytes");
-    };
-
-};
 
 
 int main()
@@ -546,7 +711,6 @@ int main()
     constexpr std::uint32_t initialWindowHeight = 600;
 
     GLFWwindow* glfwWindow = InitializeGLFWWindow(initialWindowWidth, initialWindowHeight, "OpenGL-TextRenderer");
-
 
 
     SetupOpenGL();
@@ -559,75 +723,7 @@ int main()
     const ShaderProgram shaderProgram = ShaderProgram("Shaders\\FontSpriteVertexShader.glsl", "Shaders\\FontSpriteFragmentShader.glsl");
 
 
-
-    // TODO: Add error checking
-
-    // Get SSBO index
-    const std::string ssboName = "Input";
-    GLint ssboIndex = glGetProgramResourceIndex(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboName.data());
-
-
-    // Get the longest variable name in the SSBO
-    int ssboVariableMaxLength = 0;
-    glGetProgramInterfaceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, GL_MAX_NAME_LENGTH, &ssboVariableMaxLength);
-
-
-    // Get number of active SSBO variables
-    GLenum numberOfActiveVariablesProperty = GL_NUM_ACTIVE_VARIABLES;
-    GLint numberOfVariables = 0;
-
-    glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &numberOfActiveVariablesProperty, 1, nullptr, &numberOfVariables);
-
-
-    // Get SSBO variable indices
-    GLenum activeVariablesProperty = GL_ACTIVE_VARIABLES;
-    std::vector<GLint> variableIndices = std::vector<GLint> (numberOfVariables);
-
-    glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &activeVariablesProperty, numberOfVariables, nullptr, variableIndices.data());
-
-
-    // Get SSBO variable offsets
-    GLenum offsetProperty = GL_OFFSET;
-    std::unordered_map<std::string, GLint> variableOffsets = std::unordered_map<std::string, GLint>(numberOfVariables);
-
-    static constexpr GLenum arraySizeProperty = GL_ARRAY_SIZE;
-
-    static constexpr GLenum nameLengthProperty = GL_NAME_LENGTH;
-
-
-    for(std::size_t i = 0; i < variableIndices.size(); i++)
-    {
-        // Get SSBO variable array size
-        int arraySize = 0;
-        glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], 1, &arraySizeProperty, sizeof(arraySize), nullptr, &arraySize);
-
-        int bufferLength = 0;
-        glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], 1, &nameLengthProperty, sizeof(bufferLength), nullptr, &bufferLength);
-
-        // SSBO variable name
-        std::string name;
-        name.resize(static_cast<std::size_t>(bufferLength) - 1);
-
-        glGetProgramResourceName(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], bufferLength, nullptr, name.data());
-
-
-        GLint offset = 0;
-
-        // SSBO variable offset
-        glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_BUFFER_VARIABLE, variableIndices[i], 1, &offsetProperty, sizeof(GLint), nullptr, &offset);
-
-        // If the variable is an array..
-        if(arraySize == 0 || arraySize != 1)
-        {
-            const std::size_t variableNameEnd = name.find('[');
-
-            // "-4" because "ssboVariableMaxLength" includes a null-terminator
-            variableOffsets.insert(std::make_pair(std::string(name.cbegin(), name.cbegin() + variableNameEnd), offset));
-        }
-        else
-            variableOffsets.insert(std::make_pair(std::string(name.cbegin(), name.cend()), offset));
-    };
-
+    const ShaderStorageBuffer inputSSBO = ShaderStorageBuffer("Input", shaderProgram, 256);
 
     static std::string textToDraw = "Type anything!";
 
@@ -706,7 +802,7 @@ int main()
 
         fontSprite.Draw(shaderProgram,
                         textToDraw,
-                        variableOffsets,
+                        inputSSBO,
                         { 1.0f, 0.0f, 0.0f, 1.0f });
 
         glfwSwapBuffers(glfwWindow);

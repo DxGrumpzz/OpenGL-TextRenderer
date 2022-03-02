@@ -3,6 +3,19 @@
 layout(location = 0) in vec2 VertexPosition;
 
 
+struct Test
+{
+    vec2 vec2_Test;
+};
+
+struct Test2
+{
+    vec2 vec2_Test;
+    Test Test;
+};
+
+
+
 layout(std430, binding = 0) readonly buffer Input
 {
     float float_off_0;
@@ -47,8 +60,6 @@ out vec4 VertexShaderTextColourOutput;
 
 void main()
 {
-    // VertexShaderTextColourOutput = vec4_off_0+uint_off_16+ vec4_off_32 +vec4_off_48 +uint_off_64+uint_off_68;
-
     VertexShaderTextColourOutput = vec4_off_16 + float_off_0;
 
    gl_Position = Projection * TextTransform * VertexShaderTextColourOutput;

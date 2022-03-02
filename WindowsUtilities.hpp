@@ -513,7 +513,14 @@ namespace WindowsUtilities
     #pragma warning(push)
     // Ignore unused parameter warning
     #pragma warning(disable: 4100)
-    static void Assert(const bool expression, const std::string_view& message, const std::source_location sourceLocation = std::source_location::current())
+    /// <summary>
+    /// A function that will assert an expression. 
+    /// Will throw CRT exception if expression results in "false"
+    /// </summary>
+    /// <param name="expression"> The expression to assert </param>
+    /// <param name="message"> A message that will be dispalyed in the CRT dialog if the expression fails </param>
+    /// <param name="sourceLocation"> The location at which this function was called  </param>
+    static bool Assert(const bool expression, const std::string_view& message, const std::source_location sourceLocation = std::source_location::current())
     {
         #ifdef _DEBUG
 
@@ -527,8 +534,40 @@ namespace WindowsUtilities
             _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", message.data());
         };
 
+        return expression;
+        #else
+        return true;
         #endif
     };
+
+    /// <summary>
+    /// A function that will assert an expression. 
+    /// Will throw CRT exception if expression results in "false"
+    /// </summary>
+    /// <param name="expression"> The expression to assert </param>
+    /// <param name="messageResult"> A callable function that will return a message as a "std::string". Will only be called if the expression fails </param>
+    /// <param name="sourceLocation"> The location at which this function was called  </param>
+    static bool Assert(const bool expression, const std::function<std::string(void)>& messageResult, const std::source_location sourceLocation = std::source_location::current())
+    {
+        #ifdef _DEBUG
+
+        if(expression == false)
+        {
+            char modulePath[MAX_PATH + 1] { 0 };
+            GetModuleFileNameA(nullptr, modulePath, MAX_PATH + 1);
+
+            const std::string moduleFilename = std::filesystem::path(modulePath).filename().string();
+
+            _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", messageResult().data());
+        };
+
+
+        return expression;
+        #else
+        return true;
+        #endif
+    };
+
     #pragma warning(pop)
 
 
