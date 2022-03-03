@@ -156,6 +156,7 @@ private:
 
     std::uint32_t _bufferBindingIndex = 0;
 
+    mutable std::size_t _sizeInBytes = 0;
 
 private:
 
@@ -168,7 +169,8 @@ public:
 
 
     ShaderStorageBuffer(const std::string_view& ssboName, const ShaderProgram& shaderProgram, const std::size_t sizeInBytes, std::uint32_t bufferBindingIndex = 0) :
-        _bufferBindingIndex(bufferBindingIndex)
+        _bufferBindingIndex(bufferBindingIndex),
+        _sizeInBytes(sizeInBytes)
     {
         const bool queryResult = QuerySSBOData(ssboName, shaderProgram);
 
@@ -176,7 +178,7 @@ public:
             return;
 
         glCreateBuffers(1, &_bufferID);
-        glNamedBufferData(_bufferID, sizeInBytes, nullptr, GL_DYNAMIC_DRAW);
+        glNamedBufferData(_bufferID, sizeInBytes, nullptr, GL_DYNAMIC_COPY);
 
         Bind();
 
@@ -187,7 +189,9 @@ public:
     ShaderStorageBuffer(ShaderStorageBuffer&& copy) noexcept :
         _ssboElements(std::exchange(copy._ssboElements, {})),
         _bufferID(std::exchange(copy._bufferID, 0)),
-        _bufferBindingIndex(std::exchange(copy._bufferBindingIndex, 0))
+        _bufferBindingIndex(std::exchange(copy._bufferBindingIndex, 0)),
+        _sizeInBytes(std::exchange(copy._sizeInBytes, 0))
+
     {
 
     };
@@ -228,19 +232,25 @@ public:
     };
 
 
-    void Realloc(const std::size_t newSizeInBytes) const
+    void Reallocate(const std::size_t newSizeInBytes) const
     {
+        // Ensure that this buffer is bound as an SSBO
         Bind();
 
         std::uint32_t newBufferID = 0;
-        glCreateBuffers(1, &newBufferID);
-        glNamedBufferData(_bufferID, newSizeInBytes, nullptr, GL_DYNAMIC_DRAW);
 
-        glCopyNamedBufferSubData(_bufferID, newBufferID, 0, 0, newSizeInBytes);
+        glCreateBuffers(1, &newBufferID);
+        glNamedBufferData(newBufferID, newSizeInBytes, nullptr, GL_DYNAMIC_COPY);
+
+        glCopyNamedBufferSubData(_bufferID, newBufferID, 0, 0, _sizeInBytes);
 
         glDeleteBuffers(1, &_bufferID);
 
         _bufferID = newBufferID;
+        _sizeInBytes = newSizeInBytes;
+
+        // Re-bind the new buffer as an SSBO
+        Bind();
     };
 
 
@@ -261,6 +271,7 @@ public:
         _ssboElements = std::exchange(copy._ssboElements, {});
         _bufferID = std::exchange(copy._bufferID, 0);
         _bufferBindingIndex = std::exchange(copy._bufferBindingIndex, 0);
+        _sizeInBytes = std::exchange(copy._sizeInBytes, 0);
 
         return *this;
     };
@@ -525,110 +536,14 @@ public:
 
     void Draw(const std::string& text, const glm::vec4& textColour = { 0.0f, 0.0f, 0.0f, 1.0f }) const
     {
-
-        //float float_off_0 = 1.0f;
-        //glNamedBufferSubData(_inputSSBO, 0, sizeof(float_off_0), &float_off_0);
-
-        //float float_off_4 = 2.0f;
-        //glNamedBufferSubData(_inputSSBO, 4, sizeof(float_off_4), &float_off_4);
-
-        //glm::vec4 vec4_off_16 = glm::vec4(3.0f, 4.0f, 5.0f, 6.0f);
-        //glNamedBufferSubData(_inputSSBO, 16, sizeof(glm::vec4), &vec4_off_16);
-
-        //float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
-        //glNamedBufferSubData(_inputSSBO, 32, sizeof(float_off_32), &float_off_32);
-
-        //float float_off_72[12] = { 17.0f, 18.0f, 19.0f, 20.0f, 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f };
-        //glNamedBufferSubData(_inputSSBO, 72, sizeof(float_off_72), &float_off_72);
-
-
-        //#define nameof(x) std::string_view(#x)
-
-        //_inputSSBO.SetValue("float_off_0", 1.0f);
-        //_inputSSBO.SetValue("float_off_4", 2.0f);
-
-        //_inputSSBO.SetValue("vec4_off_16", glm::vec4(3.0f, 4.0f, 5.0f, 6.0f));
-
-        //float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
-        //_inputSSBO.SetValue(nameof(float_off_32), float_off_32);
-
-        //glm::vec2 vec2_off_72[2] = { {17.0f, 18.0f}, {19.0f, 20.0f} };
-        //_inputSSBO.SetValue(nameof(vec2_off_72), vec2_off_72);
-
-        //float float_off_88[12] = { 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f, 29.0f, 30.0f, 31.0f, 32.0f };
-        //_inputSSBO.SetValue(nameof(float_off_88), float_off_88);
-
-        //#undef nameof
-
-
-        /*
-        #define nameof(x) std::string(#x)
-
-        float float_off_0 = 1.0f;
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_0)).Offset, sizeof(float_off_0), &float_off_0);
-
-        float float_off_4 = 2.0f;
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_4)).Offset, sizeof(float_off_4), &float_off_4);
-
-        glm::vec4 vec4_off_16 = glm::vec4(3.0f, 4.0f, 5.0f, 6.0f);
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(vec4_off_16)).Offset, sizeof(glm::vec4), &vec4_off_16);
-
-        float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_32)).Offset, sizeof(float_off_32), &float_off_32);
-
-        glm::vec2 vec2_off_72[2] = { {17.0f, 18.0f}, {19.0f, 20.0f} };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(vec2_off_72)).Offset, sizeof(vec2_off_72), &vec2_off_72);
-
-        float float_off_88[12] = { 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f, 29.0f, 30.0f, 31.0f, 32.0f };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at(nameof(float_off_88)).Offset, sizeof(float_off_88), &float_off_88);
-
-        #undef nameof
-        */
-
-        /*
-        float float_off_0 = 1.0f;
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at("float_off_0"), sizeof(float_off_0), &float_off_0);
-
-        float float_off_4 = 2.0f;
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at("float_off_4"), sizeof(float_off_4), &float_off_4);
-
-        glm::vec4 vec4_off_16 = glm::vec4(3.0f, 4.0f, 5.0f, 6.0f);
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at("vec4_off_16"), sizeof(glm::vec4), &vec4_off_16);
-
-        float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at("float_off_32"), sizeof(float_off_32), &float_off_32);
-
-        glm::vec2 vec2_off_72[2] = { {17.0f, 18.0f}, {19.0f, 20.0f} };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at("vec2_off_72"), sizeof(vec2_off_72), &vec2_off_72);
-
-        float float_off_88[12] = { 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f, 29.0f, 30.0f, 31.0f, 32.0f };
-        glNamedBufferSubData(_inputSSBO, variableOffsets.at("float_off_88"), sizeof(float_off_88), &float_off_88);
-
-        */
-
-        // glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
-
-
         if(text.empty() == true)
             return;
 
         // Allocate buffer memory if necessary
         if(text.size() > _capacity)
         {
-            // const std::uint32_t newSSBOBuffer = AllocateAndBindBuffer(static_cast<std::uint32_t>(text.size()) + (_capacity / 2),
-            //                                                           _fontSpriteWidth, _fontSpriteHeight,
-            //                                                           _glyphWidth, _glyphHeight);
-
-
-            // Delete old buffer
-            // glDeleteBuffers(1, &_inputSSBO);
-
-            // _inputSSBO = newSSBOBuffer;
-
-            // _inputSSBO = std::move(ShaderStorageBuffer("Input", _shaderProgram, inputSize));
-            
             const std::size_t inputSize = (sizeof(std::uint32_t) * 4) + (sizeof(glm::vec4) * 2) + (sizeof(std::uint32_t) * (text.size() + (_capacity / 2)));
-            _inputSSBO.Realloc(inputSize);
+            _inputSSBO.Reallocate(inputSize);
         };
 
 
@@ -800,7 +715,6 @@ int main()
     const ShaderProgram shaderProgram = ShaderProgram("Shaders\\FontSpriteVertexShader.glsl", "Shaders\\FontSpriteFragmentShader.glsl");
 
     const FontSprite fontSprite = FontSprite(13, 24, shaderProgram, L"Resources\\Consolas13x24.bmp");
-
 
 
     static std::string textToDraw = "Type anything!";

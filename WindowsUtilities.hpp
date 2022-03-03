@@ -1054,7 +1054,7 @@ namespace WindowsUtilities
 
 
         template <class _Rep = long long, class _Period = std::milli>
-        static void SendKeyPressAsKeycode(const std::vector<std::uint8_t>& keyCodes, const std::chrono::duration<_Rep, _Period>& timeout = std::chrono::milliseconds(1))
+        static void SendKeyPressAsKeycode(const std::vector<std::uint8_t>& keyCodes, const std::chrono::duration<_Rep, _Period>& timeoutBetweenKeys = std::chrono::milliseconds(1))
         {
             INPUT input = { 0 };
 
@@ -1072,7 +1072,7 @@ namespace WindowsUtilities
                 SendInput(1, &input, sizeof(input));
             };
 
-            std::this_thread::sleep_for(timeout);
+            std::this_thread::sleep_for(timeoutBetweenKeys);
         };
 
 
