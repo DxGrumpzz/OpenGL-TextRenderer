@@ -145,11 +145,24 @@ public:
 
 class ShaderStorageBuffer
 {
-    std::unordered_map<std::string, SSBOElement> _variableOffsets { };
 
-    std::uint32_t _bufferID = 0;
+    friend class FontSprite;
+
+private:
+
+    std::unordered_map<std::string, SSBOElement> _ssboElements { };
+
+    mutable std::uint32_t _bufferID = 0;
 
     std::uint32_t _bufferBindingIndex = 0;
+
+
+private:
+
+    ShaderStorageBuffer()
+    {
+    };
+
 
 public:
 
@@ -169,6 +182,22 @@ public:
 
     };
 
+    ShaderStorageBuffer(const ShaderStorageBuffer& copy) = delete;
+
+    ShaderStorageBuffer(ShaderStorageBuffer&& copy) noexcept :
+        _ssboElements(std::exchange(copy._ssboElements, {})),
+        _bufferID(std::exchange(copy._bufferID, 0)),
+        _bufferBindingIndex(std::exchange(copy._bufferBindingIndex, 0))
+    {
+
+    };
+
+
+    ~ShaderStorageBuffer()
+    {
+        glDeleteBuffers(1, &_bufferID);
+    };
+
 
 public:
 
@@ -178,12 +207,13 @@ public:
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _bufferBindingIndex, _bufferID);
     };
 
+
     template<typename T>
     void SetValue(const std::string_view& name, const T& value) const
     {
-        const auto findResult = _variableOffsets.find(name.data());
+        const auto findResult = _ssboElements.find(name.data());
 
-        wt::Assert(findResult != _variableOffsets.end(), [&]()
+        wt::Assert(findResult != _ssboElements.end(), [&]()
         {
             return std::string("No such variable name \"").append(name).append("\"");
         });
@@ -197,6 +227,43 @@ public:
         glNamedBufferSubData(_bufferID, offset, sizeof(T), &value);
     };
 
+
+    void Realloc(const std::size_t newSizeInBytes) const
+    {
+        Bind();
+
+        std::uint32_t newBufferID = 0;
+        glCreateBuffers(1, &newBufferID);
+        glNamedBufferData(_bufferID, newSizeInBytes, nullptr, GL_DYNAMIC_DRAW);
+
+        glCopyNamedBufferSubData(_bufferID, newBufferID, 0, 0, newSizeInBytes);
+
+        glDeleteBuffers(1, &_bufferID);
+
+        _bufferID = newBufferID;
+    };
+
+
+public:
+
+    std::uint32_t GetBufferID() const 
+    {
+        return _bufferID;
+    };
+
+
+public:
+
+    ShaderStorageBuffer& operator = (const ShaderStorageBuffer& copy) = delete;
+
+    ShaderStorageBuffer& operator = (ShaderStorageBuffer&& copy) noexcept
+    {
+        _ssboElements = std::exchange(copy._ssboElements, {});
+        _bufferID = std::exchange(copy._bufferID, 0);
+        _bufferBindingIndex = std::exchange(copy._bufferBindingIndex, 0);
+
+        return *this;
+    };
 
 private:
 
@@ -231,7 +298,7 @@ private:
         static constexpr  GLenum activeVariablesProperty = GL_ACTIVE_VARIABLES;
         std::vector<GLint> variableIndices = std::vector<GLint> (numberOfVariables);
 
-        _variableOffsets.reserve(numberOfVariables);
+        _ssboElements.reserve(numberOfVariables);
 
         glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &activeVariablesProperty, numberOfVariables, nullptr, variableIndices.data());
 
@@ -270,17 +337,17 @@ private:
             {
                 const std::size_t variableNameEnd = name.find('[');
 
-                _variableOffsets.insert(std::make_pair(std::string(name.cbegin(), name.cbegin() + variableNameEnd), SSBOElement(offset, arraySize)));
+                _ssboElements.insert(std::make_pair(std::string(name.cbegin(), name.cbegin() + variableNameEnd), SSBOElement(offset, arraySize)));
             }
             else
             {
                 const std::size_t variableNameEnd = name.find('[');
                 if(variableNameEnd != name.npos)
                 {
-                    _variableOffsets.insert(std::make_pair(std::string(name.cbegin(), name.cbegin() + variableNameEnd), SSBOElement(offset, arraySize)));
+                    _ssboElements.insert(std::make_pair(std::string(name.cbegin(), name.cbegin() + variableNameEnd), SSBOElement(offset, arraySize)));
                 }
                 else
-                    _variableOffsets.insert(std::make_pair(std::string(name.cbegin(), name.cend()), SSBOElement(offset, arraySize)));
+                    _ssboElements.insert(std::make_pair(std::string(name.cbegin(), name.cend()), SSBOElement(offset, arraySize)));
             };
         };
 
@@ -339,11 +406,14 @@ private:
     std::uint32_t _rows = 0;
 
 
+
     std::uint32_t _vao = 0;
 
     std::uint32_t _glyphVertexPositionsVBO = 0;
 
-    mutable std::uint32_t _inputSSBO = 0;
+    std::reference_wrapper<const ShaderProgram> _shaderProgram;
+
+    ShaderStorageBuffer _inputSSBO;
 
 
     /// <summary>
@@ -356,10 +426,12 @@ public:
 
     FontSprite(const std::uint32_t glyphWidth,
                const std::uint32_t glyphHeight,
+               const ShaderProgram& shaderProgram,
                const std::wstring_view& texturePath,
                const std::uint32_t capacity = 32) :
         _glyphWidth (glyphWidth),
         _glyphHeight(glyphHeight),
+        _shaderProgram(shaderProgram),
         _capacity(capacity)
     {
         _textureID = LoadTexture(texturePath);
@@ -403,21 +475,30 @@ public:
         glEnableVertexArrayAttrib(_vao, 0);
 
 
-        _inputSSBO = AllocateAndBindBuffer(_capacity,
-                                           _fontSpriteWidth, _fontSpriteHeight,
-                                           _glyphWidth, _glyphHeight);
+        // TODO: Find a way to compute SSBO size automatically
+        const std::size_t inputSize = (sizeof(std::uint32_t) * 4) + (sizeof(glm::vec4) * 2) + (sizeof(std::uint32_t) * (_capacity));
+        _inputSSBO = ShaderStorageBuffer("Input", shaderProgram, inputSize);
+
+        _inputSSBO.SetValue("GlyphWidth", glyphWidth);
+        _inputSSBO.SetValue("GlyphHeight", glyphHeight);
+
+        _inputSSBO.SetValue("TextureWidth", _fontSpriteWidth);
+        _inputSSBO.SetValue("TextureHeight", _fontSpriteHeight);
+
+        constexpr glm::vec4 chromaKey = { 1.0f, 1.0f, 1.0f, 1.0f };
+        _inputSSBO.SetValue("ChromaKey", chromaKey);
+
+        constexpr glm::vec4 textColour = { 0.0f, 0.0f, 0.0f, 1.0f };
+        _inputSSBO.SetValue("TextColour", textColour);
 
         // TODO: Refactor
-        // TODO: Create a (better) SSBO wrapper
-        // TODO: OPtimization, cache the matrix and transform
+        // TODO: OPtimization, cache the projection matrix and transform
     };
-
 
 
     ~FontSprite()
     {
         glDeleteBuffers(1, &_glyphVertexPositionsVBO);
-        glDeleteBuffers(1, &_inputSSBO);
 
         glDeleteTextures(1, &_textureID);
 
@@ -429,6 +510,8 @@ public:
 
     void Bind(const std::uint32_t textureUnit = 0) const
     {
+        _shaderProgram.get().Bind();
+
         glActiveTexture(GL_TEXTURE0 + textureUnit);
         glBindTexture(GL_TEXTURE_2D, _textureID);
 
@@ -436,14 +519,12 @@ public:
 
         glBindBuffer(GL_ARRAY_BUFFER, _glyphVertexPositionsVBO);
 
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _inputSSBO);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _inputSSBO);
+        _inputSSBO.Bind();
     };
 
-    #pragma warning(disable: 4100)
-    void Draw(const ShaderProgram& shaderProgram, const std::string& text, const ShaderStorageBuffer& shaderStorageBuffer, const glm::vec4& textColour = { 0.0f, 0.0f, 0.0f, 1.0f }) const
+
+    void Draw(const std::string& text, const glm::vec4& textColour = { 0.0f, 0.0f, 0.0f, 1.0f }) const
     {
-        shaderProgram.Bind();
 
         //float float_off_0 = 1.0f;
         //glNamedBufferSubData(_inputSSBO, 0, sizeof(float_off_0), &float_off_0);
@@ -461,23 +542,23 @@ public:
         //glNamedBufferSubData(_inputSSBO, 72, sizeof(float_off_72), &float_off_72);
 
 
-        #define nameof(x) std::string_view(#x)
+        //#define nameof(x) std::string_view(#x)
 
-        shaderStorageBuffer.SetValue("float_off_0", 1.0f);
-        shaderStorageBuffer.SetValue("float_off_4", 2.0f);
+        //_inputSSBO.SetValue("float_off_0", 1.0f);
+        //_inputSSBO.SetValue("float_off_4", 2.0f);
 
-        shaderStorageBuffer.SetValue("vec4_off_16", glm::vec4(3.0f, 4.0f, 5.0f, 6.0f));
+        //_inputSSBO.SetValue("vec4_off_16", glm::vec4(3.0f, 4.0f, 5.0f, 6.0f));
 
-        float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
-        shaderStorageBuffer.SetValue(nameof(float_off_32), float_off_32);
+        //float float_off_32[10] = { 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f };
+        //_inputSSBO.SetValue(nameof(float_off_32), float_off_32);
 
-        glm::vec2 vec2_off_72[2] = { {17.0f, 18.0f}, {19.0f, 20.0f} };
-        shaderStorageBuffer.SetValue(nameof(vec2_off_72), vec2_off_72);
+        //glm::vec2 vec2_off_72[2] = { {17.0f, 18.0f}, {19.0f, 20.0f} };
+        //_inputSSBO.SetValue(nameof(vec2_off_72), vec2_off_72);
 
-        float float_off_88[12] = { 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f, 29.0f, 30.0f, 31.0f, 32.0f };
-        shaderStorageBuffer.SetValue(nameof(float_off_88), float_off_88);
+        //float float_off_88[12] = { 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f, 29.0f, 30.0f, 31.0f, 32.0f };
+        //_inputSSBO.SetValue(nameof(float_off_88), float_off_88);
 
-        #undef nameof
+        //#undef nameof
 
 
         /*
@@ -525,28 +606,31 @@ public:
 
         */
 
-        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
+        // glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
 
 
-        /*
         if(text.empty() == true)
             return;
 
         // Allocate buffer memory if necessary
         if(text.size() > _capacity)
         {
-            const std::uint32_t newSSBOBuffer = AllocateAndBindBuffer(static_cast<std::uint32_t>(text.size()) + (_capacity / 2),
-                                                                      _fontSpriteWidth, _fontSpriteHeight,
-                                                                      _glyphWidth, _glyphHeight);
+            // const std::uint32_t newSSBOBuffer = AllocateAndBindBuffer(static_cast<std::uint32_t>(text.size()) + (_capacity / 2),
+            //                                                           _fontSpriteWidth, _fontSpriteHeight,
+            //                                                           _glyphWidth, _glyphHeight);
+
 
             // Delete old buffer
-            glDeleteBuffers(1, &_inputSSBO);
+            // glDeleteBuffers(1, &_inputSSBO);
 
-            _inputSSBO = newSSBOBuffer;
+            // _inputSSBO = newSSBOBuffer;
+
+            // _inputSSBO = std::move(ShaderStorageBuffer("Input", _shaderProgram, inputSize));
+            
+            const std::size_t inputSize = (sizeof(std::uint32_t) * 4) + (sizeof(glm::vec4) * 2) + (sizeof(std::uint32_t) * (text.size() + (_capacity / 2)));
+            _inputSSBO.Realloc(inputSize);
         };
 
-
-        shaderProgram.Bind();
 
 
         // Calculate projection and transform
@@ -554,12 +638,12 @@ public:
         const glm::mat4 transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
 
         // Update uniforms
-        shaderProgram.SetMatrix4("Projection", screenSpaceProjection);
-        shaderProgram.SetMatrix4("TextTransform", transform);
+        _shaderProgram.get().SetMatrix4("Projection", screenSpaceProjection);
+        _shaderProgram.get().SetMatrix4("TextTransform", transform);
 
 
         // Set text colour
-        glNamedBufferSubData(_inputSSBO, (sizeof(std::uint32_t) * 4) + (sizeof(glm::vec4) * 1), sizeof(textColour), &textColour);
+        _inputSSBO.SetValue("TextColour", textColour);
 
 
         // Copy the texts' character to the SSBO
@@ -568,16 +652,13 @@ public:
         {
             const std::uint32_t& characterAsInt = character;
 
-            glNamedBufferSubData(_inputSSBO, (sizeof(std::int32_t) * 4) + (sizeof(glm::vec4) * 2) + (sizeof(std::int32_t) * index), sizeof(characterAsInt), &characterAsInt);
+            glNamedBufferSubData(_inputSSBO.GetBufferID(), (sizeof(std::int32_t) * 4) + (sizeof(glm::vec4) * 2) + (sizeof(std::int32_t) * index), sizeof(characterAsInt), &characterAsInt);
 
             index++;
         };
 
 
-
         glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
-        */
-
     };
 
 
@@ -701,7 +782,6 @@ private:
     };
 
 };
- 
 
 
 
@@ -716,17 +796,14 @@ int main()
     SetupOpenGL();
 
 
-    const FontSprite fontSprite = FontSprite(13, 24, L"Resources\\Consolas13x24.bmp");
-
-
 
     const ShaderProgram shaderProgram = ShaderProgram("Shaders\\FontSpriteVertexShader.glsl", "Shaders\\FontSpriteFragmentShader.glsl");
 
+    const FontSprite fontSprite = FontSprite(13, 24, shaderProgram, L"Resources\\Consolas13x24.bmp");
 
-    const ShaderStorageBuffer inputSSBO = ShaderStorageBuffer("Input", shaderProgram, 256);
+
 
     static std::string textToDraw = "Type anything!";
-
 
 
     // Keyboard input handler
@@ -800,9 +877,7 @@ int main()
 
         fontSprite.Bind();
 
-        fontSprite.Draw(shaderProgram,
-                        textToDraw,
-                        inputSSBO,
+        fontSprite.Draw(textToDraw,
                         { 1.0f, 0.0f, 0.0f, 1.0f });
 
         glfwSwapBuffers(glfwWindow);
