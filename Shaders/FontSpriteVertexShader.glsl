@@ -15,7 +15,7 @@ layout(std430, binding = 0) readonly buffer Input
 
     vec4 TextColour;
 
-    // No 8-bit integers, so I'm using an int
+    // No 8-bit integers, so I'm using a uint
     uint Characters[];
 };
 
@@ -90,61 +90,5 @@ void main()
     VertexShaderTextColourOutput = TextColour;
     VertexShaderChromaKeyOutput = ChromaKey;
 
-   gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
+    gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
 };
-
-
-
-//#version 460 core
-//
-//layout(location = 0) in vec2 VertexPosition;
-//
-//
-//struct Test
-//{
-//    vec2 vec2_Test;
-//};
-//
-//struct Test2
-//{
-//    vec2 vec2_Test;
-//    Test Test;
-//};
-//
-//
-//
-//layout(std430, binding = 0) readonly buffer Input
-//{
-//    float float_off_0;
-//    float float_off_4;
-//
-//    vec4 vec4_off_16;
-//    
-//    float[10] float_off_32;
-//    
-//    vec2[2] vec2_off_72;
-//
-//    float[] float_off_88;
-//
-//};
-//
-//
-//
-//uniform mat4 Projection = mat4(1.0f);
-//
-//uniform mat4 TextTransform = mat4(1.0f);
-//
-//
-//out vec2 VertexShaderTextureCoordinateOutput;
-//out vec4 VertexShaderChromaKeyOutput;
-//out vec4 VertexShaderTextColourOutput;
-//
-//
-//
-//void main()
-//{
-//    VertexShaderTextColourOutput = vec4_off_16 + float_off_0;
-//
-//   gl_Position = Projection * TextTransform * VertexShaderTextColourOutput;
-//
-//};

@@ -2,14 +2,36 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
-    <ClCompile Include="Includes\glad\glad.c" />
+    <ClCompile Include="Includes\glad\glad.c">
+      <Filter>GLUtils</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\FontSpriteVertexShader.glsl" />
-    <None Include="Shaders\FontSpriteFragmentShader.glsl" />
+    <None Include="Shaders\FontSpriteVertexShader.glsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\FontSpriteFragmentShader.glsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="GLUtils\ShaderProgram.hpp" />
     <ClInclude Include="WindowsUtilities.hpp" />
+    <ClInclude Include="ShaderStorageBuffer.hpp">
+      <Filter>GLUtils</Filter>
+    </ClInclude>
+    <ClInclude Include="ShaderProgram.hpp">
+      <Filter>GLUtils</Filter>
+    </ClInclude>
+    <ClInclude Include="FontSprite.hpp">
+      <Filter>GLUtils</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="GLUtils">
+      <UniqueIdentifier>{19be49ed-a370-4ec9-9dc0-0c7429f3197c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{8b6ecf1b-9b80-4391-953d-7a18c11cbdd7}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 </Project>
