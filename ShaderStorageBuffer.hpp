@@ -131,7 +131,7 @@ public:
 
     void SetValue(const std::size_t offset, const std::size_t sizeInBytes, const void* value) const
     {
-        glNamedBufferSubData(_bufferID, offset, sizeInBytes, &value);
+        glNamedBufferSubData(_bufferID, offset, sizeInBytes, value);
     };
 
 
