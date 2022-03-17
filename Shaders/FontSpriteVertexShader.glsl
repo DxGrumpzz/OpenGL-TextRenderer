@@ -3,8 +3,36 @@
 layout(location = 0) in vec2 VertexPosition;
 
 
+struct Test
+{
+    uint Test_Uint_0; // 16 // 112
+    
+    vec4 Test_Vec4_1; // 32 // 128
+
+    mat4 Test_Mat4_2; // 48 // 144
+};
+
+
 layout(std430, binding = 0) readonly buffer Input
 {
+    uint Uint_off_0;
+    uint Uint_off_4;
+    uint Uint_off_8;
+    uint Uint_off_12;
+    vec3 Vec3f_off_16;
+    mat4 Mat4f_off_32;
+    uint Uint_off_96;
+
+    // uint Uint_1; // 4
+    
+    // Test test;
+    
+    // Test test2;
+
+    
+
+    
+    /*
     uint GlyphWidth;
     uint GlyphHeight;
 
@@ -17,6 +45,7 @@ layout(std430, binding = 0) readonly buffer Input
 
     // No 8-bit integers, so I'm using a uint
     uint Characters[];
+    */
 };
 
 
@@ -31,7 +60,14 @@ out vec4 VertexShaderChromaKeyOutput;
 out vec4 VertexShaderTextColourOutput;
 
 
+void main()
+{
+    // gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
+    gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * Uint_off_0), VertexPosition.y, 0.0f, 1.0f);
 
+};
+
+/*
 void main()
 {
     // Subtract 32 (The space character) from the selected character to get the correct character index
@@ -92,3 +128,4 @@ void main()
 
     gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
 };
+*/

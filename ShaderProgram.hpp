@@ -1,5 +1,8 @@
 #pragma once
+#define WIN32_LEAN_AND_MEN
 
+#include <Windows.h>
+#include <gdiplus.h>
 #include <cstdint>
 #include <glad/glad.h>
 #include <string>
@@ -10,7 +13,7 @@
 #include <fstream>
 #include <unordered_map>
 
-#include "../WindowsUtilities.hpp"
+#include "WindowsUtilities.hpp"
 
 
 /// <summary>
