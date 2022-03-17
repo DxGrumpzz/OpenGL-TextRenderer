@@ -199,6 +199,12 @@ private:
             return false;
 
 
+        static constexpr GLenum bufferSizeProperty = GL_BUFFER_DATA_SIZE;
+        GLint bufferSize = 0;
+
+        glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &bufferSizeProperty, 1, nullptr, &bufferSize);
+
+
         // Get number of active SSBO variables
         static constexpr GLenum numberOfActiveVariablesProperty = GL_NUM_ACTIVE_VARIABLES;
         GLint numberOfVariables = 0;

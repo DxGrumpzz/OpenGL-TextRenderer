@@ -111,6 +111,7 @@ void SetupOpenGL()
 
 
 
+
 enum class DataType
 {
     UInt32,
@@ -127,18 +128,24 @@ enum class DataType
 };
 
 
-
-struct Element
+class Element
 {
+
+private:
+
+    Element* _lastAddedElement = nullptr;
+
 
 public:
 
     // Only applied to structs and arrays
-    std::vector<Element> Elements;
+    std::unordered_map<std::string, Element> Elements;
 
+
+    DataType ArrayDataType = DataType::None;
 
     DataType Type = DataType::None;
-    
+
     std::size_t SizeInBytes = 0;
 
     std::size_t Offset = 0;
@@ -167,11 +174,12 @@ public:
 
     };
 
+
 public:
 
-    void Add()
+    void Add(DataType dataType, const std::string_view& name)
     {
-        wt::Assert((Type == DataType::Struct || Type == DataType::Array) && Type == DataType::None,
+        wt::Assert((Type == DataType::Struct || Type == DataType::Array) && Type != DataType::None,
                    []()
         {
             return std::string("Trying to add to non struct or array type");
@@ -179,9 +187,114 @@ public:
 
 
 
+        const auto& insertResult = Elements.insert(std::make_pair(name, Element { dataType }));
 
+        Element& newElement = (Elements.find(name.data()))->second;
+
+
+        if(Elements.size() == 1)
+        {
+            _lastAddedElement = &newElement;
+            SizeInBytes = newElement.SizeInBytes;
+            
+            newElement.Offset = Offset;
+
+            return;
+        };
+
+
+        if(dataType == DataType::Struct)
+        {
+            const std::size_t rawOffset = _lastAddedElement->Offset + _lastAddedElement->SizeInBytes;
+
+            const std::size_t actualOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
+
+            newElement.Offset = actualOffset;
+        }
+        else if(dataType == DataType::Array)
+        {
+            const std::size_t rawOffset = _lastAddedElement->Offset + _lastAddedElement->SizeInBytes;
+
+            const std::size_t actualOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
+
+            newElement.Offset = actualOffset;
+        }
+        else
+        {
+            const std::size_t rawOffset = _lastAddedElement->SizeInBytes + _lastAddedElement->Offset;
+
+            // If the element crosses over a 16 byte boundary
+            const bool crossesBoundary = CrossesBoundary(rawOffset, newElement.SizeInBytes);
+
+            if(crossesBoundary == false)
+            {
+                newElement.Offset = rawOffset;
+                SizeInBytes += newElement.SizeInBytes;
+            }
+            else
+            {
+                const std::size_t actualOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
+
+                const std::size_t padding = actualOffset - (SizeInBytes + Offset);
+
+                newElement.Offset = actualOffset;
+                SizeInBytes += newElement.SizeInBytes + padding;
+            };
+        };
+
+
+        _lastAddedElement = &newElement;
     };
 
+
+    Element& Get(const std::string_view& name)
+    {
+        auto findResult = Elements.find(name.data());
+
+        return findResult->second;
+    };
+
+
+    void SetArrayType(DataType arrayDataType)
+    {
+        wt::Assert(Type == DataType::Array,
+                   []()
+        {
+            return std::string("Trying to assign type on non array Element type");
+        });
+
+        wt::Assert(ArrayDataType == DataType::None,
+                   []()
+        {
+            return std::string("Trying to assign new type on existing array type");
+        });
+
+        wt::Assert(arrayDataType != DataType::None,
+                   []()
+        {
+            return std::string("Invalid array type");
+        });
+
+        ArrayDataType = arrayDataType;
+    };
+
+private:
+
+    /// <summary>
+    /// Check if an element crosses a 16-byte boundary
+    /// </summary>
+    /// <param name="offset"> </param>
+    /// <param name="size"></param>
+    /// <returns></returns>
+    constexpr bool CrossesBoundary(std::size_t offset, std::size_t sizeInBytes) const
+    {
+        const std::size_t end = offset + sizeInBytes;
+
+        const std::size_t pageStart = offset / 16u;
+        const std::size_t pageEnd = end / 16u;
+
+        return ((pageStart != pageEnd) && (end % 16 != 0u)) || (sizeInBytes > 16u);
+    };
 };
 
 
@@ -194,9 +307,7 @@ public:
     Element* _lastAddedElement = nullptr;
 
 
-
 public:
-
 
     void Add(DataType dataType, const std::string_view& name)
     {
@@ -220,17 +331,11 @@ public:
 
         if(dataType == DataType::Struct)
         {
-            // const Element& previousElement = (_layoutElements.end()- 2);
+            const std::size_t rawOffset = _lastAddedElement->Offset + _lastAddedElement->SizeInBytes;
 
-            std::size_t offset = 0;
-            if(_lastAddedElement != nullptr)
-            {
-                offset = (_lastAddedElement->Offset + _lastAddedElement->SizeInBytes);
-            };
+            const std::size_t actualOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
 
-
-
-            int _ = 0;
+            newElement.Offset = actualOffset;
         }
         else
         {
@@ -269,7 +374,7 @@ public:
     /// <param name="offset"> </param>
     /// <param name="size"></param>
     /// <returns></returns>
-    constexpr bool CrossesBoundary(std::size_t offset, std::size_t sizeInBytes)
+    constexpr bool CrossesBoundary(std::size_t offset, std::size_t sizeInBytes) const
     {
         const std::size_t end = offset + sizeInBytes;
 
@@ -279,6 +384,7 @@ public:
         return ((pageStart != pageEnd) && (end % 16 != 0u)) || (sizeInBytes > 16u);
     };
 
+
 };
 
 
@@ -287,31 +393,44 @@ void SSBOTest()
 {
     Layout layout;
 
-    layout.Add(DataType::UInt32, "Uint_off_0");
-    layout.Add(DataType::UInt32, "Uint_off_4");
-    layout.Add(DataType::UInt32, "Uint_off_8");
-    layout.Add(DataType::UInt32, "Uint_off_12");
-    layout.Add(DataType::Vec4f,  "Vec3f_off_16");
-    layout.Add(DataType::Mat4f,  "Mat4f_off_32");
-    layout.Add(DataType::UInt32, "Uint_off_96");
+    {
+        layout.Add(DataType::UInt32, "Uint_off_0"); // 0
+    };
+
     layout.Add(DataType::Struct, "Test");
+    Element& structTest = layout.Get("Test");
+    {
 
-    // Element& structTest = layout.Get("Test");
+        structTest.Add(DataType::UInt32, "Test_Uint_0");
+        structTest.Add(DataType::Vec4f, "Test_Vec4_1");
+        structTest.Add(DataType::Mat4f, "Test_Mat4_2");
+    };
 
-    if(layout.Get("Uint_off_0").Offset != 0)
+
+    layout.Add(DataType::Struct, "Test2");
+    Element& structTest2 = layout.Get("Test2");
+    {
+        structTest2.Add(DataType::UInt32, "Test2_Uint_0");
+        structTest2.Add(DataType::UInt32, "Test2_Uint_1");
+
+        structTest2.Add(DataType::Mat4f, "Test2_Mat4_2");
+    };
+
+
+    if(structTest.Get("Test_Uint_0").Offset != 16)
         __debugbreak();
-    if(layout.Get("Uint_off_4").Offset != 4)
+    if(structTest.Get("Test_Vec4_1").Offset != 32)
         __debugbreak();
-    if(layout.Get("Uint_off_8").Offset != 8)
+    if(structTest.Get("Test_Mat4_2").Offset != 48)
         __debugbreak();
-    if(layout.Get("Uint_off_12").Offset != 12)
+
+    if(structTest2.Get("Test2_Uint_0").Offset != 112)
         __debugbreak();
-    if(layout.Get("Vec3f_off_16").Offset != 16)
+    if(structTest2.Get("Test2_Uint_1").Offset != 116)
         __debugbreak();
-    if(layout.Get("Mat4f_off_32").Offset != 32)
+    if(structTest2.Get("Test2_Mat4_2").Offset != 128)
         __debugbreak();
-    if(layout.Get("Uint_off_96").Offset != 96)
-        __debugbreak();
+
 
     int _ = 0;
 
@@ -445,17 +564,6 @@ void SSBOTest()
 
 int main()
 {
-    constexpr std::size_t offset = 16;
-
-    // constexpr std::size_t actualOffset1 = (16u - (offset % 16u));
-    // constexpr std::size_t actualOffset2 = actualOffset1 % 16u;
-    // constexpr std::size_t actualOffset3 = offset + actualOffset2;
-        
-    constexpr std::size_t actualOffset1 = (16u - (offset % 16u));
-    constexpr std::size_t actualOffset2 = actualOffset1 % 16u;
-    constexpr std::size_t actualOffset3 = offset + actualOffset2;
-
-
     SSBOTest();
 
     constexpr std::uint32_t initialWindowWidth = 800;

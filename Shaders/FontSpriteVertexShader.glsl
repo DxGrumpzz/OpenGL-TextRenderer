@@ -5,30 +5,30 @@ layout(location = 0) in vec2 VertexPosition;
 
 struct Test
 {
-    uint Test_Uint_0; // 16 // 112
+    uint Test_Uint_0; // 16 
     
-    vec4 Test_Vec4_1; // 32 // 128
+    vec4 Test_Vec4_1; // 32
 
-    mat4 Test_Mat4_2; // 48 // 144
+    mat4 Test_Mat4_2; // 48
+};
+
+
+struct Test2
+{
+    uint Test2_Uint_0; // 112
+    uint Test2_Uint_1; // 116
+
+    mat4 Test2_Mat4_2; // 132
 };
 
 
 layout(std430, binding = 0) readonly buffer Input
 {
-    uint Uint_off_0;
-    uint Uint_off_4;
-    uint Uint_off_8;
-    uint Uint_off_12;
-    vec3 Vec3f_off_16;
-    mat4 Mat4f_off_32;
-    uint Uint_off_96;
+    uint Uint_off_0; // 
 
-    // uint Uint_1; // 4
+    Test test_off_16;
     
-    // Test test;
-    
-    // Test test2;
-
+    Test2 test2_off_112;
     
 
     
@@ -63,6 +63,7 @@ out vec4 VertexShaderTextColourOutput;
 void main()
 {
     // gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
+    // gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * Uint_off_0), VertexPosition.y, 0.0f, 1.0f);
     gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * Uint_off_0), VertexPosition.y, 0.0f, 1.0f);
 
 };
