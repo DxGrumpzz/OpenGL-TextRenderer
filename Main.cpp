@@ -130,19 +130,28 @@ enum class DataType
 
 class Element
 {
-
 private:
+
+    Element* _lastAddedLayoutElement = nullptr;
 
     Element* _lastAddedElement = nullptr;
 
-
 public:
 
-    // Only applied to structs and arrays
-    std::unordered_map<std::string, Element> Elements;
+    // Only applied to structs
+    std::unordered_map<std::string, Element> StructElements;
 
+
+    // Only applied to Arrays
+    std::vector<Element> ArrayElements;
 
     DataType ArrayDataType = DataType::None;
+
+    std::size_t MaxArrayElements = static_cast<std::size_t>(-1);
+
+    std::size_t AddedArrayElements = 0;
+
+
 
     DataType Type = DataType::None;
 
@@ -153,25 +162,12 @@ public:
 
 public:
 
-    Element(DataType type) :
-        Type(type)
+    Element(DataType type,
+            Element* lastAddedLayoutElement) :
+        _lastAddedLayoutElement(lastAddedLayoutElement),
+        Type(type),
+        SizeInBytes(DataTypeToBytes(Type))
     {
-
-        switch(type)
-        {
-            case DataType::UInt32:
-                SizeInBytes = sizeof(std::uint32_t);
-                break;
-
-            case DataType::Vec4f:
-                SizeInBytes = sizeof(glm::vec4);
-                break;
-
-            case DataType::Mat4f:
-                SizeInBytes = sizeof(glm::mat4);
-                break;
-        };
-
     };
 
 
@@ -182,21 +178,30 @@ public:
         wt::Assert((Type == DataType::Struct || Type == DataType::Array) && Type != DataType::None,
                    []()
         {
-            return std::string("Trying to add to non struct or array type");
+            return std::string("Trying to add element to non-struct or array type");
         });
 
+        if(Type == DataType::Array)
+        {
+            ++AddedArrayElements;
+
+            wt::Assert(AddedArrayElements > MaxArrayElements, []()
+            {
+                return std::string("Too many array elements");
+            });
+        };
 
 
-        const auto& insertResult = Elements.insert(std::make_pair(name, Element { dataType }));
+        const auto& insertResult = StructElements.insert(std::make_pair(name, Element { dataType, _lastAddedLayoutElement }));
 
-        Element& newElement = (Elements.find(name.data()))->second;
+        Element& newElement = (StructElements.find(name.data()))->second;
 
 
-        if(Elements.size() == 1)
+        if(StructElements.size() == 1)
         {
             _lastAddedElement = &newElement;
             SizeInBytes = newElement.SizeInBytes;
-            
+
             newElement.Offset = Offset;
 
             return;
@@ -249,7 +254,7 @@ public:
 
     Element& Get(const std::string_view& name)
     {
-        auto findResult = Elements.find(name.data());
+        auto findResult = StructElements.find(name.data());
 
         return findResult->second;
     };
@@ -275,8 +280,152 @@ public:
             return std::string("Invalid array type");
         });
 
+
         ArrayDataType = arrayDataType;
+
+
+        const std::size_t lastAddedLayoutElementSizeInBytes = _lastAddedLayoutElement != nullptr ?
+            _lastAddedLayoutElement->SizeInBytes : 0;
+
+        const std::size_t elementSizeInBytes = DataTypeToBytes(ArrayDataType);
+
+
+        if(lastAddedLayoutElementSizeInBytes != elementSizeInBytes)
+        {
+            const std::size_t rawOffset = _lastAddedLayoutElement != nullptr ?
+                _lastAddedLayoutElement->Offset + _lastAddedLayoutElement->SizeInBytes : 0;
+
+            const std::size_t actualOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
+
+            Offset = actualOffset;
+        };
+
     };
+
+
+    void SetArrayCount(std::size_t numberOfElements)
+    {
+        wt::Assert(Type == DataType::Array, []()
+        {
+            return std::string("Trying to set array size on non-array element");
+        });
+
+        wt::Assert(ArrayDataType != DataType::None, []()
+        {
+            return std::string("Array type must be defined to set size");
+        });
+
+        wt::Assert(numberOfElements >= 1, []()
+        {
+            return std::string("Invalid array size");
+        });
+
+        wt::Assert(MaxArrayElements == -1, []()
+        {
+            return std::string("Array size already defined");
+        });
+
+
+        MaxArrayElements = numberOfElements;
+
+        Element initialElement = Element(ArrayDataType, _lastAddedLayoutElement);
+
+        initialElement.Offset = Offset;
+
+        ArrayElements.push_back(initialElement);
+
+        SizeInBytes += initialElement.SizeInBytes;
+
+
+        for(std::size_t i = 0; i < MaxArrayElements - 1; ++i)
+        {
+            const Element& lastAddedElement = ArrayElements.back();
+
+            const std::size_t offset = lastAddedElement.Offset + lastAddedElement.SizeInBytes;
+
+            Element newElement = Element(ArrayDataType, _lastAddedLayoutElement);
+
+            newElement.Offset = offset;
+
+            ArrayElements.push_back(newElement);
+
+            SizeInBytes += newElement.SizeInBytes;
+        };
+
+        /*
+        Element initialArrayElement = Element(ArrayDataType, _lastAddedLayoutElement);
+
+        constexpr std::size_t rawOffset = 0;
+
+        // If the element crosses over a 16 byte boundary
+        const bool crossesBoundary = CrossesBoundary(rawOffset, initialArrayElement.SizeInBytes);
+
+
+        if(crossesBoundary == false)
+        {
+            SizeInBytes += initialArrayElement.SizeInBytes;
+        }
+        else
+        {
+            const std::size_t actualOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
+
+            const std::size_t padding = actualOffset - (SizeInBytes + Offset);
+
+            SizeInBytes += initialArrayElement.SizeInBytes + padding;
+        };
+
+
+        ArrayElements.push_back(initialArrayElement);
+
+
+        for(std::size_t i = 0; i < MaxArrayElements - 1; ++i)
+        {
+            const Element& lastAddedElement = ArrayElements.back();
+
+            const std::size_t offset = lastAddedElement.Offset + lastAddedElement.SizeInBytes;
+
+            Element newElement = Element(ArrayDataType, _lastAddedLayoutElement);
+
+
+            // If the element crosses over a 16 byte boundary
+            const bool crossesBoundary = CrossesBoundary(rawOffset, newElement.SizeInBytes);
+
+            if(crossesBoundary == false)
+            {
+                SizeInBytes += newElement.SizeInBytes;
+                newElement.Offset = offset;
+            }
+            else
+            {
+                const std::size_t actualOffset = offset + (16u - offset % 16u) % 16u;
+
+                const std::size_t padding = actualOffset - (SizeInBytes + Offset);
+
+                SizeInBytes += newElement.SizeInBytes + padding;
+                newElement.Offset = actualOffset;
+            };
+
+            ArrayElements.push_back(newElement);
+        };
+*/
+    };
+
+
+    Element& GetElementAtIndex(std::size_t index)
+    {
+        wt::Assert(Type == DataType::Array, []()
+        {
+            return "Trying to index into non-array element";
+        });
+
+        wt::Assert(index >= 0, []()
+        {
+            return "Invalid index";
+        });
+
+        return ArrayElements[index];
+    };
+
 
 private:
 
@@ -295,6 +444,38 @@ private:
 
         return ((pageStart != pageEnd) && (end % 16 != 0u)) || (sizeInBytes > 16u);
     };
+
+
+    constexpr std::size_t DataTypeToBytes(DataType type)
+    {
+        switch(type)
+        {
+            case DataType::UInt32:
+                return sizeof(std::uint32_t);
+                break;
+
+            case DataType::Vec4f:
+                return sizeof(glm::vec4);
+                break;
+
+            case DataType::Mat4f:
+                return sizeof(glm::mat4);
+                break;
+
+
+            case DataType::Array:
+            case DataType::Struct:
+                return 0;
+                break;
+
+            default:
+            {
+                wt::Assert(false, "No such type");
+                __debugbreak();
+            };
+        };
+    };
+
 };
 
 
@@ -317,7 +498,7 @@ public:
         });
 
 
-        const auto& insertResult = _layoutElements.insert(std::make_pair(name, Element { dataType }));
+        const auto& insertResult = _layoutElements.insert(std::make_pair(name, Element { dataType, _lastAddedElement }));
 
         Element& newElement = (_layoutElements.find(name.data()))->second;
 
@@ -329,6 +510,7 @@ public:
         };
 
 
+
         if(dataType == DataType::Struct)
         {
             const std::size_t rawOffset = _lastAddedElement->Offset + _lastAddedElement->SizeInBytes;
@@ -337,6 +519,14 @@ public:
 
             newElement.Offset = actualOffset;
         }
+        // else if(dataType == DataType::Array)
+        // {
+        //     const std::size_t rawOffset = _lastAddedElement->Offset + _lastAddedElement->SizeInBytes;
+        // 
+        //     const std::size_t actualOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
+        // 
+        //     newElement.Offset = actualOffset;
+        // }
         else
         {
             const std::size_t rawOffset = _lastAddedElement->Offset + _lastAddedElement->SizeInBytes;
@@ -391,46 +581,96 @@ public:
 
 void SSBOTest()
 {
-    Layout layout;
 
+    // Structure layout
     {
-        layout.Add(DataType::UInt32, "Uint_off_0"); // 0
-    };
+        Layout structLayout;
 
-    layout.Add(DataType::Struct, "Test");
-    Element& structTest = layout.Get("Test");
+        {
+            structLayout.Add(DataType::UInt32, "Uint_off_0");
+        };
+
+        structLayout.Add(DataType::Struct, "Test");
+        Element& structTest = structLayout.Get("Test");
+        {
+
+            structTest.Add(DataType::UInt32, "Test_Uint_0");
+            structTest.Add(DataType::Vec4f, "Test_Vec4_1");
+            structTest.Add(DataType::Mat4f, "Test_Mat4_2");
+        };
+
+
+        structLayout.Add(DataType::Struct, "Test2");
+        Element& structTest2 = structLayout.Get("Test2");
+        {
+            structTest2.Add(DataType::UInt32, "Test2_Uint_0");
+            structTest2.Add(DataType::UInt32, "Test2_Uint_1");
+
+            structTest2.Add(DataType::Mat4f, "Test2_Mat4_2");
+        };
+
+
+        if(structTest.Get("Test_Uint_0").Offset != 16)
+            __debugbreak();
+        if(structTest.Get("Test_Vec4_1").Offset != 32)
+            __debugbreak();
+        if(structTest.Get("Test_Mat4_2").Offset != 48)
+            __debugbreak();
+
+        if(structTest2.Get("Test2_Uint_0").Offset != 112)
+            __debugbreak();
+        if(structTest2.Get("Test2_Uint_1").Offset != 116)
+            __debugbreak();
+        if(structTest2.Get("Test2_Mat4_2").Offset != 128)
+            __debugbreak();
+
+    }
+
+
+    // Array layout 
     {
+        // Array layout with same element
+        {
+            Layout sameElementArrayLayout;
 
-        structTest.Add(DataType::UInt32, "Test_Uint_0");
-        structTest.Add(DataType::Vec4f, "Test_Vec4_1");
-        structTest.Add(DataType::Mat4f, "Test_Mat4_2");
+            sameElementArrayLayout.Add(DataType::UInt32, "Uint_off_0");
+
+            sameElementArrayLayout.Add(DataType::Array, "Uint_off_4");
+
+            Element& arrayElement = sameElementArrayLayout.Get("Uint_off_4");
+            arrayElement.SetArrayType(DataType::UInt32);
+            arrayElement.SetArrayCount(5);
+
+            sameElementArrayLayout.Add(DataType::UInt32, "Uint_off_24");
+
+
+            if(sameElementArrayLayout.Get("Uint_off_0").Offset != 0)
+                __debugbreak();
+            if(sameElementArrayLayout.Get("Uint_off_4").Offset != 4)
+                __debugbreak();
+
+            if(arrayElement.GetElementAtIndex(0).Offset != 4)
+                __debugbreak();
+            if(arrayElement.GetElementAtIndex(1).Offset != 8)
+                __debugbreak();
+            if(arrayElement.GetElementAtIndex(2).Offset != 12)
+                __debugbreak();
+            if(arrayElement.GetElementAtIndex(3).Offset != 16)
+                __debugbreak();
+            if(arrayElement.GetElementAtIndex(4).Offset != 20)
+                __debugbreak();
+
+            if(sameElementArrayLayout.Get("Uint_off_24").Offset != 24)
+                __debugbreak();
+        }
+
+        // Array layout
+        {
+            Layout arrayLayout;
+
+        };
+
     };
-
-
-    layout.Add(DataType::Struct, "Test2");
-    Element& structTest2 = layout.Get("Test2");
-    {
-        structTest2.Add(DataType::UInt32, "Test2_Uint_0");
-        structTest2.Add(DataType::UInt32, "Test2_Uint_1");
-
-        structTest2.Add(DataType::Mat4f, "Test2_Mat4_2");
-    };
-
-
-    if(structTest.Get("Test_Uint_0").Offset != 16)
-        __debugbreak();
-    if(structTest.Get("Test_Vec4_1").Offset != 32)
-        __debugbreak();
-    if(structTest.Get("Test_Mat4_2").Offset != 48)
-        __debugbreak();
-
-    if(structTest2.Get("Test2_Uint_0").Offset != 112)
-        __debugbreak();
-    if(structTest2.Get("Test2_Uint_1").Offset != 116)
-        __debugbreak();
-    if(structTest2.Get("Test2_Mat4_2").Offset != 128)
-        __debugbreak();
-
 
     int _ = 0;
 

@@ -18,41 +18,24 @@ struct Test2
     uint Test2_Uint_0; // 112
     uint Test2_Uint_1; // 116
 
-    mat4 Test2_Mat4_2; // 132
+    mat4 Test2_Mat4_2; // 128
 };
 
 
 layout(std430, binding = 0) readonly buffer Input
 {
-    uint Uint_off_0; // 
+    uint Uint_off_0;
 
-    Test test_off_16;
-    
-    Test2 test2_off_112;
-    
+    uint[5] Uint_off_4;
 
-    
-    /*
-    uint GlyphWidth;
-    uint GlyphHeight;
-
-    uint TextureWidth;
-    uint TextureHeight;
-
-    vec4 ChromaKey;
-
-    vec4 TextColour;
-
-    // No 8-bit integers, so I'm using a uint
-    uint Characters[];
-    */
+    uint Uint_off_24;
 };
-
 
 
 uniform mat4 Projection = mat4(1.0f);
 
 uniform mat4 TextTransform = mat4(1.0f);
+
 
 
 out vec2 VertexShaderTextureCoordinateOutput;
@@ -65,8 +48,9 @@ void main()
     // gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
     // gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * Uint_off_0), VertexPosition.y, 0.0f, 1.0f);
     gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * Uint_off_0), VertexPosition.y, 0.0f, 1.0f);
-
 };
+
+
 
 /*
 void main()
