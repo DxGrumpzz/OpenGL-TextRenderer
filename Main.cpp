@@ -588,9 +588,44 @@ public:
 
 
 
+constexpr std::size_t DataTypeSizeInBytes(DataType type)
+{
+    switch(type)
+    {
+        case DataType::UInt32:
+            return sizeof(std::uint32_t);
+            break;
+
+        case DataType::Vec2f:
+            return sizeof(glm::vec2);
+            break;
+
+        case DataType::Vec4f:
+            return sizeof(glm::vec4);
+            break;
+
+        case DataType::Mat4f:
+            return sizeof(glm::mat4);
+            break;
+
+
+        case DataType::Array:
+        case DataType::Struct:
+            return 0;
+            break;
+
+        default:
+        {
+            wt::Assert(false, "No such type");
+            __debugbreak();
+        };
+    };
+};
+
 
 class Element2
 {
+
 public:
 
     DataType Type = DataType::None;
@@ -599,50 +634,46 @@ public:
 
     std::size_t Offset = 0;
 
+
+    // std::unordered_map<std::string, Element2> Elements;
+
+    std::vector<Element2> ArrayElements;
+
+    DataType ArrayElementType = DataType::None;
+
+    std::size_t ArrayElementCount = static_cast<std::size_t>(-1);
+
+
+
 public:
 
     Element2(DataType type) :
         Type(type),
-        SizeInBytes(DataTypeToBytes(type))
+        SizeInBytes(DataTypeSizeInBytes(type))
     {
     };
 
 
-private:
+public:
 
-    constexpr std::size_t DataTypeToBytes(DataType type)
+    Element2& GetAtIndex(std::size_t index)
     {
-        switch(type)
-        {
-            case DataType::UInt32:
-                return sizeof(std::uint32_t);
-                break;
+        Element2& element = ArrayElements[index];
 
-            case DataType::Vec2f:
-                return sizeof(glm::vec2);
-                break;
-
-            case DataType::Vec4f:
-                return sizeof(glm::vec4);
-                break;
-
-            case DataType::Mat4f:
-                return sizeof(glm::mat4);
-                break;
-
-
-            case DataType::Array:
-            case DataType::Struct:
-                return 0;
-                break;
-
-            default:
-            {
-                wt::Assert(false, "No such type");
-                __debugbreak();
-            };
-        };
+        return element;
     };
+
+    void Add(DataType dataType, const std::string_view& name)
+    {
+
+    };
+
+    void SetArray(DataType arrayType, std::size_t elementCount)
+    {
+        ArrayElementType = arrayType;
+        ArrayElementCount = elementCount;
+    };
+
 };
 
 
@@ -655,9 +686,11 @@ public:
 
 public:
 
-    void Add(DataType dataType, const std::string_view& name)
+    Element2& Add(DataType dataType, const std::string_view& name)
     {
-        _layoutElements.emplace_back(std::make_pair(name, Element2(dataType)));
+        auto& insertResult = _layoutElements.emplace_back(std::make_pair(name, Element2(dataType)));
+
+        return insertResult.second;
     };
 
 };
@@ -665,16 +698,21 @@ public:
 
 class Layout2
 {
-public:
+
+private:
+
     std::unordered_map<std::string, Element2> _layoutElements;
 
+
 public:
 
-    Layout2(const RawLayout& rawLayout)
+    Layout2(const RawLayout& rawLayout) :
+        _layoutElements(CreateLayout(rawLayout))
     {
-        CreateLayout(rawLayout);
     };
 
+
+public:
 
     Element2& Get(const std::string_view& name)
     {
@@ -684,42 +722,91 @@ public:
     };
 
 
+
 private:
 
-    void CreateLayout(const RawLayout& rawLayout)
+    std::unordered_map<std::string, Element2> CreateLayout(const RawLayout& rawLayout, std::size_t offset = 0) const
     {
-        std::size_t currentOffset = 0;
+        std::unordered_map<std::string, Element2> layoutResult;
+
+        std::size_t currentOffset = offset;
 
         for(auto& rawLayoutElement : rawLayout._layoutElements)
         {
             Element2 element = rawLayoutElement.second;
 
-            const bool crossesBoundary = CrossesBoundary(currentOffset, element.SizeInBytes);
-
-            if(crossesBoundary == true)
+            if(element.Type == DataType::Array)
             {
-                const std::size_t rawOffset = currentOffset;
+                const bool crossesBoundary = CrossesBoundary(currentOffset, DataTypeSizeInBytes(element.ArrayElementType));
 
-                const std::size_t actualOffset = GetCorrectOffset(rawOffset);
+                if(crossesBoundary == true)
+                {
+                    const std::size_t rawOffset = currentOffset;
 
-                const std::size_t padding = actualOffset - currentOffset;
+                    const std::size_t actualOffset = GetCorrectOffset(rawOffset);
 
-                element.Offset = actualOffset;
-                // SizeInBytes += newElement.SizeInBytes + padding;
+                    const std::size_t padding = actualOffset - currentOffset;
+
+                    element.Offset = actualOffset;
+                }
+                else
+                {
+                    element.Offset = currentOffset;
+                };
+
+
+                RawLayout rawArrayLayout;
+
+                for(std::size_t i = 0; i < element.ArrayElementCount; ++i)
+                {
+                    rawArrayLayout.Add(element.ArrayElementType, std::string("[").append(std::to_string(i)).append("]"));
+                };
+
+                auto arrayLayout = CreateLayout(rawArrayLayout, currentOffset);
+
+
+                for(auto & arrayLayoutElement : arrayLayout)
+                {
+                    element.ArrayElements.emplace_back(arrayLayoutElement.second);
+                };
+
+                auto arrayLayoutEnd = std::prev((arrayLayout.end()));
+
+
+                layoutResult.insert(std::make_pair(rawLayoutElement.first, element));
+                currentOffset = arrayLayoutEnd->second.Offset;
             }
             else
             {
-                element.Offset = currentOffset;
+                const bool crossesBoundary = CrossesBoundary(currentOffset, element.SizeInBytes);
+
+                if(crossesBoundary == true)
+                {
+                    const std::size_t rawOffset = currentOffset;
+
+                    const std::size_t actualOffset = GetCorrectOffset(rawOffset);
+
+                    const std::size_t padding = actualOffset - currentOffset;
+
+                    element.Offset = actualOffset;
+                }
+                else
+                {
+                    element.Offset = currentOffset;
+                };
+
+                layoutResult.insert(std::make_pair(rawLayoutElement.first, element));
+                currentOffset = element.Offset + element.SizeInBytes;
             };
 
-            _layoutElements.insert(std::make_pair(rawLayoutElement.first, element));
-
-            currentOffset = element.Offset + element.SizeInBytes;
         };
 
+        return layoutResult;
     };
 
-    constexpr std::size_t GetCorrectOffset(std::size_t rawOffset)
+
+
+    constexpr std::size_t GetCorrectOffset(std::size_t rawOffset) const
     {
         const std::size_t correctedOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
 
@@ -823,6 +910,62 @@ void SSBOTest()
                 __debugbreak();
         };
 
+
+        // Array 
+        {
+            RawLayout rawLayout;
+
+            Element2& rawArrayElement = rawLayout.Add(DataType::Array, "Uint_off_0");
+
+            rawArrayElement.SetArray(DataType::UInt32, 4);
+            Layout2 layout = Layout2(rawLayout);
+
+            Element2& arrayElement = layout.Get("Uint_off_0");
+
+            if(layout.Get("Uint_off_0").Offset != 0)
+                __debugbreak();
+
+            if(arrayElement.GetAtIndex(0).Offset != 0)
+                __debugbreak();
+            if(arrayElement.GetAtIndex(1).Offset != 4)
+                __debugbreak();
+            if(arrayElement.GetAtIndex(2).Offset != 8)
+                __debugbreak();
+            if(arrayElement.GetAtIndex(3).Offset != 12)
+                __debugbreak();
+
+        };
+
+
+        // Array with padding
+        {
+            RawLayout rawLayout;
+
+            rawLayout.Add(DataType::UInt32, "Uint_off_0");
+
+            Element2& rawArrayElement = rawLayout.Add(DataType::Array, "Array_off_16");
+
+            rawArrayElement.SetArray(DataType::Vec4f, 3);
+
+            Layout2 layout = Layout2(rawLayout);
+
+            Element2& arrayElement = layout.Get("Array_off_16");
+
+
+            if(layout.Get("Uint_off_0").Offset != 0)
+                __debugbreak();
+
+            if(layout.Get("Array_off_16").Offset != 16)
+                __debugbreak();
+
+            if(arrayElement.GetAtIndex(0).Offset != 16)
+                __debugbreak();
+            if(arrayElement.GetAtIndex(1).Offset != 32)
+                __debugbreak();
+            if(arrayElement.GetAtIndex(2).Offset != 48)
+                __debugbreak();
+
+        };
 
         int _ = 0;
     };
