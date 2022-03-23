@@ -5,28 +5,26 @@ layout(location = 0) in vec2 VertexPosition;
 
 struct Test
 {
-    uint Test_Uint_0; // 16 // 48
+    uint Test_Uint_off_16; 
     
-    vec4 Test_Vec4_1; // 32 // 64
+    vec4 Test_Vec4_off_32; 
 };
 
 
 struct Test2
 {
-    uint Test2_Uint_0; // 112
-    uint Test2_Uint_1; // 116
-
-    mat4 Test2_Mat4_2; // 128
+    uint Test2_Uint_off_48;
+    mat4 Test2_Mat4_off_64; 
 };
 
 
 layout(std430, binding = 0) readonly buffer Input
 {
-    uint Uint_off_0; // 0
+    uint Uint_off_0;
 
-    Test[2] Test_off_16; // 16
+    Test Test_off_16;
 
-    uint Uint_off_80; // 80
+    Test2 Test2_off_48;
 };
 
 

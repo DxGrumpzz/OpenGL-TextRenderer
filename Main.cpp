@@ -635,7 +635,7 @@ public:
     std::size_t Offset = 0;
 
 
-    // std::unordered_map<std::string, Element2> Elements;
+    std::vector<std::pair<std::string, Element2>> StructElements;
 
     std::vector<Element2> ArrayElements;
 
@@ -663,17 +663,42 @@ public:
         return element;
     };
 
+    Element2& Get(const std::string_view& name)
+    {
+        for(auto& structElement : StructElements)
+        {
+            if(structElement.first == name)
+            {
+                return structElement.second;
+            };
+        };
+
+        wt::Assert(false, [&]()
+        {
+            return std::string("No such element \"").append(name).append("\" was found");
+        });
+    };
+
     void Add(DataType dataType, const std::string_view& name)
     {
-
+        StructElements.emplace_back(std::make_pair(name, Element2(dataType)));
     };
 
     void SetArray(DataType arrayType, std::size_t elementCount)
     {
         ArrayElementType = arrayType;
         ArrayElementCount = elementCount;
+
+        //if(ArrayElementType == DataType::Struct)
+        //{
+        //    ArrayElements.emplace_back(Element2(DataType::None));
+        //};
     };
 
+    Element2& SetCustomArrayType()
+    {
+        return ArrayElements.back();
+    };
 };
 
 
@@ -706,9 +731,10 @@ private:
 
 public:
 
-    Layout2(const RawLayout& rawLayout) :
-        _layoutElements(CreateLayout(rawLayout))
+    Layout2(const RawLayout& rawLayout)
     {
+        const auto layout = CreateLayout(rawLayout);
+        _layoutElements.insert(layout.begin(), layout.end());
     };
 
 
@@ -725,11 +751,12 @@ public:
 
 private:
 
-    std::unordered_map<std::string, Element2> CreateLayout(const RawLayout& rawLayout, std::size_t offset = 0) const
+    std::vector<std::pair<std::string, Element2>> CreateLayout(const RawLayout& rawLayout, std::size_t offset = 0) const
     {
-        std::unordered_map<std::string, Element2> layoutResult;
+        std::vector<std::pair<std::string, Element2>> layoutResult;
 
         std::size_t currentOffset = offset;
+
 
         for(auto& rawLayoutElement : rawLayout._layoutElements)
         {
@@ -773,8 +800,53 @@ private:
                 auto arrayLayoutEnd = std::prev((arrayLayout.end()));
 
 
-                layoutResult.insert(std::make_pair(rawLayoutElement.first, element));
+                layoutResult.emplace_back(std::make_pair(rawLayoutElement.first, element));
                 currentOffset = arrayLayoutEnd->second.Offset;
+            }
+            else if(element.Type == DataType::Struct)
+            {
+                RawLayout rawStructLayout;
+
+                for(auto& structElement : element.StructElements)
+                {
+                    rawStructLayout.Add(structElement.second.Type, structElement.first);
+                };
+
+                // Calculate struct size
+                auto structLayoutInitial = CreateLayout(rawStructLayout, 0);
+
+                auto structLayoutEnd = std::prev(structLayoutInitial.end());
+
+                const std::size_t structSize = structLayoutEnd->second.Offset + structLayoutEnd->second.SizeInBytes;
+
+
+                const bool crossesBoundary = CrossesBoundary(currentOffset, structSize);
+
+                if(crossesBoundary == true)
+                {
+                    const std::size_t rawOffset = currentOffset;
+
+                    const std::size_t actualOffset = GetCorrectOffset(rawOffset);
+
+                    const std::size_t padding = actualOffset - currentOffset;
+
+                    currentOffset = actualOffset;
+                    element.Offset = currentOffset;
+                };
+
+                auto structLayoutFinal = CreateLayout(rawStructLayout, currentOffset);
+
+                element.StructElements.clear();
+
+                for(auto& structLayoutElement : structLayoutFinal)
+                {
+                    element.StructElements.emplace_back(structLayoutElement);
+                };
+
+                structLayoutEnd = std::prev(structLayoutFinal.end());
+
+                layoutResult.emplace_back(std::make_pair(rawLayoutElement.first, element));
+                currentOffset = structLayoutEnd->second.Offset + structLayoutEnd->second.SizeInBytes;
             }
             else
             {
@@ -795,7 +867,7 @@ private:
                     element.Offset = currentOffset;
                 };
 
-                layoutResult.insert(std::make_pair(rawLayoutElement.first, element));
+                layoutResult.emplace_back(std::make_pair(rawLayoutElement.first, element));
                 currentOffset = element.Offset + element.SizeInBytes;
             };
 
@@ -830,7 +902,6 @@ private:
     };
 
 };
-
 
 
 void SSBOTest()
@@ -964,6 +1035,92 @@ void SSBOTest()
                 __debugbreak();
             if(arrayElement.GetAtIndex(2).Offset != 48)
                 __debugbreak();
+
+        };
+
+
+        // Struct
+        {
+            RawLayout structLayout;
+            
+            structLayout.Add(DataType::UInt32, "Uint_off_0");
+
+            Element2& rawStructElement = structLayout.Add(DataType::Struct, "Test_off_16");
+            
+            rawStructElement.Add(DataType::UInt32, "Test_Uint_off_16");
+            rawStructElement.Add(DataType::Vec4f, "Test_Vec4_off_32");
+
+            structLayout.Add(DataType::UInt32, "Uint_off_48");
+
+            Layout2 layout = Layout2(structLayout);
+            
+            Element2& structElement = layout.Get("Test_off_16");
+            
+
+            if(layout.Get("Uint_off_0").Offset != 0)
+                __debugbreak();
+
+            if(layout.Get("Test_off_16").Offset != 16)
+                __debugbreak();
+
+                if(structElement.Get("Test_Uint_off_16").Offset != 16)
+                    __debugbreak();
+
+                if(structElement.Get("Test_Vec4_off_32").Offset != 32)
+                    __debugbreak();
+
+            if(layout.Get("Uint_off_48").Offset != 48)
+                __debugbreak();
+        };
+
+
+        // Multiple structs
+        {
+            RawLayout structLayout;
+
+            structLayout.Add(DataType::UInt32, "Uint_off_0");
+
+            Element2& rawStructElement = structLayout.Add(DataType::Struct, "Test_off_16");
+
+            rawStructElement.Add(DataType::UInt32, "Test_Uint_off_16");
+            rawStructElement.Add(DataType::Vec4f, "Test_Vec4_off_32");
+
+
+            Element2& rawStructElement2 = structLayout.Add(DataType::Struct, "Test2_off_48");
+
+            rawStructElement2.Add(DataType::UInt32, "Test2_Uint_off_48");
+            rawStructElement2.Add(DataType::Mat4f, "Test2_Mat4_off_64");
+
+
+            Layout2 layout = Layout2(structLayout);
+
+            Element2& structElement = layout.Get("Test_off_16");
+            Element2& structElement2 = layout.Get("Test2_off_48");
+
+
+            if(layout.Get("Uint_off_0").Offset != 0)
+                __debugbreak();
+
+            if(layout.Get("Test_off_16").Offset != 16)
+                __debugbreak();
+
+                if(structElement.Get("Test_Uint_off_16").Offset != 16)
+                    __debugbreak();
+
+                if(structElement.Get("Test_Vec4_off_32").Offset != 32)
+                    __debugbreak();
+
+            if(layout.Get("Test2_off_48").Offset != 48)
+                __debugbreak();
+
+                if(structElement2.Get("Test2_Uint_off_48").Offset != 48)
+                    __debugbreak();
+
+                if(structElement2.Get("Test2_Mat4_off_64").Offset != 64)
+                    __debugbreak();
+
+
+            int _ = 0;
 
         };
 
