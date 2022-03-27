@@ -568,6 +568,34 @@ namespace WindowsUtilities
         #endif
     };
 
+    /// <summary>
+    /// Asserts an expressions as an std::function for more complex assertions
+    /// </summary>
+     /// <param name="expression"> The expression to assert </param>
+    /// <param name="messageResult"> A callable function that will return a message as a "std::string". Will only be called if the expression fails </param>
+    /// <param name="sourceLocation"> The location at which this function was called  </param>
+    /// <returns></returns>
+    static bool Assert(const std::function<bool(void)>& expression, const std::function<std::string(void)>& messageResult, const std::source_location sourceLocation = std::source_location::current())
+    {
+        #ifdef _DEBUG
+        const bool expressionResult = expression();
+        
+        if(expressionResult == false)
+        {
+            char modulePath[MAX_PATH + 1] { 0 };
+            GetModuleFileNameA(nullptr, modulePath, MAX_PATH + 1);
+
+            const std::string moduleFilename = std::filesystem::path(modulePath).filename().string();
+
+            _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", messageResult().data());
+        };
+
+        return expressionResult;
+        #else
+        return true;
+        #endif
+    };
+
     #pragma warning(pop)
 
 

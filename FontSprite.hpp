@@ -88,6 +88,7 @@ private:
 
     std::reference_wrapper<const ShaderProgram> _shaderProgram;
 
+    // TODO: Try an std::optional
     ShaderStorageBuffer _inputSSBO;
 
 
