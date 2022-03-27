@@ -5,9 +5,9 @@ layout(location = 0) in vec2 VertexPosition;
 
 struct Test
 {
-    uint Test_Uint_off_16; 
+    uint Test_Uint_off_0; 
     
-    vec4 Test_Vec4_off_32; 
+    vec4 Test_Vec4_off_16; 
 };
 
 
@@ -20,11 +20,11 @@ struct Test2
 
 layout(std430, binding = 0) readonly buffer Input
 {
-    uint Uint_off_0;
+    // uint Uint_off_0;
 
-    Test Test_off_16;
+    Test[5] Test_off_0;
 
-    Test2 Test2_off_48;
+    uint Uint_off_160;
 };
 
 
@@ -43,7 +43,7 @@ void main()
 {
     // gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * GlyphWidth), VertexPosition.y, 0.0f, 1.0f);
     // gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * Uint_off_0), VertexPosition.y, 0.0f, 1.0f);
-    gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * Uint_off_0), VertexPosition.y, 0.0f, 1.0f);
+    gl_Position = Projection * TextTransform * vec4(VertexPosition.x + (gl_InstanceID * Uint_off_160), VertexPosition.y, 0.0f, 1.0f);
 };
 
 

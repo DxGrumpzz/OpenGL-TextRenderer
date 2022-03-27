@@ -695,9 +695,12 @@ public:
         //};
     };
 
-    Element2& SetCustomArrayType()
+    Element2& SetCustomArrayType(std::size_t elementCount)
     {
-        return ArrayElements.back();
+        ArrayElementType = DataType::Struct;
+        ArrayElementCount = elementCount;
+
+        return ArrayElements.emplace_back(ArrayElementType);
     };
 };
 
@@ -764,44 +767,77 @@ private:
 
             if(element.Type == DataType::Array)
             {
-                const bool crossesBoundary = CrossesBoundary(currentOffset, DataTypeSizeInBytes(element.ArrayElementType));
-
-                if(crossesBoundary == true)
+                if(element.ArrayElementType == DataType::Struct)
                 {
-                    const std::size_t rawOffset = currentOffset;
+                    RawLayout rawArrayStructLayout;
 
-                    const std::size_t actualOffset = GetCorrectOffset(rawOffset);
+                    for(std::size_t i = 0; i < element.ArrayElementCount; ++i)
+                    {
+                        Element2& rawLayoutStruct = rawArrayStructLayout.Add(DataType::Struct, std::string("[").append(std::to_string(i)).append("]"));
 
-                    const std::size_t padding = actualOffset - currentOffset;
+                        for(auto& structElement : element.ArrayElements[0].StructElements)
+                        {
+                            rawLayoutStruct.Add(structElement.second.Type, structElement.first);
+                        };
+                    };
 
-                    element.Offset = actualOffset;
+                    auto arrayStructLayout = CreateLayout(rawArrayStructLayout, currentOffset);
+
+
+                    element.ArrayElements.clear();
+
+                    for(auto& arrayStructElement : arrayStructLayout)
+                    {
+                        element.ArrayElements.emplace_back(arrayStructElement.second);
+                    };
+
+
+                    auto arrayLayoutEnd = std::prev((arrayStructLayout.end()));
+
+                    layoutResult.emplace_back(std::make_pair(rawLayoutElement.first, element));
+                    currentOffset = arrayLayoutEnd->second.Offset + arrayLayoutEnd->second.SizeInBytes;
                 }
                 else
                 {
-                    element.Offset = currentOffset;
+                    const bool crossesBoundary = CrossesBoundary(currentOffset, DataTypeSizeInBytes(element.ArrayElementType));
+
+                    if(crossesBoundary == true)
+                    {
+                        const std::size_t rawOffset = currentOffset;
+
+                        const std::size_t actualOffset = GetCorrectOffset(rawOffset);
+
+                        const std::size_t padding = actualOffset - currentOffset;
+
+                        element.Offset = actualOffset;
+                    }
+                    else
+                    {
+                        element.Offset = currentOffset;
+                    };
+
+
+                    RawLayout rawArrayLayout;
+
+                    for(std::size_t i = 0; i < element.ArrayElementCount; ++i)
+                    {
+                        rawArrayLayout.Add(element.ArrayElementType, std::string("[").append(std::to_string(i)).append("]"));
+                    };
+
+                    auto arrayLayout = CreateLayout(rawArrayLayout, currentOffset);
+
+
+                    for(auto& arrayLayoutElement : arrayLayout)
+                    {
+                        element.ArrayElements.emplace_back(arrayLayoutElement.second);
+                    };
+
+                    auto arrayLayoutEnd = std::prev((arrayLayout.end()));
+
+
+                    layoutResult.emplace_back(std::make_pair(rawLayoutElement.first, element));
+                    currentOffset = arrayLayoutEnd->second.Offset;
                 };
-
-
-                RawLayout rawArrayLayout;
-
-                for(std::size_t i = 0; i < element.ArrayElementCount; ++i)
-                {
-                    rawArrayLayout.Add(element.ArrayElementType, std::string("[").append(std::to_string(i)).append("]"));
-                };
-
-                auto arrayLayout = CreateLayout(rawArrayLayout, currentOffset);
-
-
-                for(auto & arrayLayoutElement : arrayLayout)
-                {
-                    element.ArrayElements.emplace_back(arrayLayoutElement.second);
-                };
-
-                auto arrayLayoutEnd = std::prev((arrayLayout.end()));
-
-
-                layoutResult.emplace_back(std::make_pair(rawLayoutElement.first, element));
-                currentOffset = arrayLayoutEnd->second.Offset;
             }
             else if(element.Type == DataType::Struct)
             {
@@ -833,6 +869,9 @@ private:
                     currentOffset = actualOffset;
                     element.Offset = currentOffset;
                 };
+
+                element.SizeInBytes = structSize;
+
 
                 auto structLayoutFinal = CreateLayout(rawStructLayout, currentOffset);
 
@@ -1042,20 +1081,20 @@ void SSBOTest()
         // Struct
         {
             RawLayout structLayout;
-            
+
             structLayout.Add(DataType::UInt32, "Uint_off_0");
 
             Element2& rawStructElement = structLayout.Add(DataType::Struct, "Test_off_16");
-            
+
             rawStructElement.Add(DataType::UInt32, "Test_Uint_off_16");
             rawStructElement.Add(DataType::Vec4f, "Test_Vec4_off_32");
 
             structLayout.Add(DataType::UInt32, "Uint_off_48");
 
             Layout2 layout = Layout2(structLayout);
-            
+
             Element2& structElement = layout.Get("Test_off_16");
-            
+
 
             if(layout.Get("Uint_off_0").Offset != 0)
                 __debugbreak();
@@ -1063,11 +1102,11 @@ void SSBOTest()
             if(layout.Get("Test_off_16").Offset != 16)
                 __debugbreak();
 
-                if(structElement.Get("Test_Uint_off_16").Offset != 16)
-                    __debugbreak();
+            if(structElement.Get("Test_Uint_off_16").Offset != 16)
+                __debugbreak();
 
-                if(structElement.Get("Test_Vec4_off_32").Offset != 32)
-                    __debugbreak();
+            if(structElement.Get("Test_Vec4_off_32").Offset != 32)
+                __debugbreak();
 
             if(layout.Get("Uint_off_48").Offset != 48)
                 __debugbreak();
@@ -1104,32 +1143,116 @@ void SSBOTest()
             if(layout.Get("Test_off_16").Offset != 16)
                 __debugbreak();
 
-                if(structElement.Get("Test_Uint_off_16").Offset != 16)
-                    __debugbreak();
+            if(structElement.Get("Test_Uint_off_16").Offset != 16)
+                __debugbreak();
 
-                if(structElement.Get("Test_Vec4_off_32").Offset != 32)
-                    __debugbreak();
+            if(structElement.Get("Test_Vec4_off_32").Offset != 32)
+                __debugbreak();
 
             if(layout.Get("Test2_off_48").Offset != 48)
                 __debugbreak();
 
-                if(structElement2.Get("Test2_Uint_off_48").Offset != 48)
-                    __debugbreak();
+            if(structElement2.Get("Test2_Uint_off_48").Offset != 48)
+                __debugbreak();
 
-                if(structElement2.Get("Test2_Mat4_off_64").Offset != 64)
-                    __debugbreak();
+            if(structElement2.Get("Test2_Mat4_off_64").Offset != 64)
+                __debugbreak();
 
 
             int _ = 0;
 
         };
 
+
+        // Array of structs
+        {
+            RawLayout structArrayLayout;
+
+            Element2& rawArrayElement = structArrayLayout.Add(DataType::Array, "Test_off_0");
+
+            Element2& arrayType = rawArrayElement.SetCustomArrayType(5);
+
+            arrayType.Add(DataType::UInt32, "Test_Uint_off_0");
+            arrayType.Add(DataType::Vec4f, "Test_Vec4_off_16");
+
+            structArrayLayout.Add(DataType::UInt32, "Uint_off_160");
+
+
+            Layout2 layout = Layout2(structArrayLayout);
+
+            Element2& structArray = layout.Get("Test_off_0");
+
+            if(structArray.Offset != 0)
+                __debugbreak();
+
+            for(std::size_t i = 0; i < 5; ++i)
+            {
+                if(structArray.GetAtIndex(i).Offset != i * 32)
+                    __debugbreak();
+
+
+                if(structArray.GetAtIndex(i).Get("Test_Uint_off_0").Offset != i * 32)
+                    __debugbreak();
+
+                if(structArray.GetAtIndex(i).Get("Test_Vec4_off_16").Offset != (i * 32) + 16)
+                    __debugbreak();
+            };
+
+            if(layout.Get("Uint_off_160").Offset != 160)
+                __debugbreak();
+
+        };
+
+
+        // Array of structs with padding
+        {
+            RawLayout structArrayLayout;
+
+            structArrayLayout.Add(DataType::UInt32, "Uint_off_0");
+
+            Element2& rawArrayElement = structArrayLayout.Add(DataType::Array, "Test_off_16");
+
+            Element2& arrayType = rawArrayElement.SetCustomArrayType(5);
+
+            arrayType.Add(DataType::UInt32, "Test_Uint_off_16");
+            arrayType.Add(DataType::Vec4f, "Test_Vec4_off_32");
+
+            structArrayLayout.Add(DataType::UInt32, "Uint_off_176");
+
+
+            Layout2 layout = Layout2(structArrayLayout);
+
+            Element2& structArray = layout.Get("Test_off_16");
+
+            if(structArray.Offset != 0)
+                __debugbreak();
+
+            for(std::size_t i = 0; i < 5; ++i)
+            {
+                if(structArray.GetAtIndex(i).Offset != (i * 32) + 16)
+                    __debugbreak();
+
+
+                if(structArray.GetAtIndex(i).Get("Test_Uint_off_16").Offset != (i * 32) + 16)
+                    __debugbreak();
+
+                if(structArray.GetAtIndex(i).Get("Test_Vec4_off_32").Offset != ((i * 32) + 16) + 16)
+                    __debugbreak();
+            };
+
+            if(layout.Get("Uint_off_176").Offset != 176)
+                __debugbreak();
+
+        };
+
+
+
         int _ = 0;
     };
 
 
+    /*
     return;
-
     // Structure layout
     {
         Layout structLayout;
@@ -1175,7 +1298,7 @@ void SSBOTest()
     }
 
 
-    // Array layout 
+    // Array layout
     {
         // Array layout with same element
         {
@@ -1302,6 +1425,7 @@ void SSBOTest()
     };
 
     int _ = 0;
+    */
 
     // layout.Add(DataType::UInt32, "Uint_off_4");
 };
