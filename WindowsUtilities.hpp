@@ -531,7 +531,10 @@ namespace WindowsUtilities
 
             const std::string moduleFilename = std::filesystem::path(modulePath).filename().string();
 
-            _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", message.data());
+            const int reportResult = _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", message.data());
+
+            if(reportResult == 1)
+                __debugbreak();
         };
 
         return expression;
@@ -558,7 +561,10 @@ namespace WindowsUtilities
 
             const std::string moduleFilename = std::filesystem::path(modulePath).filename().string();
 
-            _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", messageResult().data());
+            const int reportResult = _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", messageResult().data());
+
+            if(reportResult == 1)
+                __debugbreak();
         };
 
 
@@ -587,7 +593,10 @@ namespace WindowsUtilities
 
             const std::string moduleFilename = std::filesystem::path(modulePath).filename().string();
 
-            _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", messageResult().data());
+            const int reportResult = _CrtDbgReport(_CRT_ASSERT, sourceLocation.file_name(), sourceLocation.line(), moduleFilename.c_str(), "%s", messageResult().data());
+
+            if(reportResult == 1)
+                __debugbreak();
         };
 
         return expressionResult;
