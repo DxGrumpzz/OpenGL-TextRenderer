@@ -8,6 +8,7 @@
 #include "FontSprite.hpp"
 #include "ShaderStorageBuffer.hpp"
 #include "WindowsUtilities.hpp"
+#include <variant>
 
 
 static int WindowWidth = 0;
@@ -166,11 +167,11 @@ constexpr std::size_t DataTypeSizeInBytes(DataType type)
 
 
 
-class Layout;
+class SSBOLayout;
 
 class IElement
 {
-    friend class Layout;
+    friend class SSBOLayout;
 
 protected:
 
@@ -213,7 +214,6 @@ public:
 
 class ScalarElement : public IElement
 {
-
 public:
 
     ScalarElement(DataType type)
@@ -222,13 +222,41 @@ public:
         _sizeInBytes = DataTypeSizeInBytes(type);
     };
 
+public:
+
+    template<typename T>
+    void Set(const T& value)
+    {
+        switch(_elementType)
+        {
+            case DataType::UInt32:
+            {
+                wt::Assert(std::is_same <T, std::uint32_t>::value == true, []()
+                {
+                    return std::string("Invalid value type. Expected \"DataType::UInt32\"");
+                });
+
+                break;
+            };
+
+            case DataType::Vec2f:
+                break;
+            case DataType::Vec4f:
+                break;
+            case DataType::Mat4f:
+                break;
+
+            default:
+                wt::Assert(false, "Invalid element");
+        };
+    };
 };
 
 class StructElement : public IElement
 {
     class ArrayElement;
 
-    friend class Layout;
+    friend class SSBOLayout;
 
 private:
 
@@ -245,7 +273,8 @@ public:
 
 public:
 
-    std::shared_ptr<IElement> Get(const std::string_view& name)
+    template<typename TElement>
+    std::shared_ptr<TElement> Get(const std::string_view& name)
     {
         wt::Assert(_elementType == DataType::Struct, [&]()
         {
@@ -256,7 +285,11 @@ public:
         {
             if(elementName == name)
             {
-                return structElement;
+                auto castResult = std::dynamic_pointer_cast<TElement, IElement>(structElement);
+
+                wt::Assert(castResult != nullptr, "Invalid element cast");
+
+                return castResult;
             };
         };
 
@@ -268,12 +301,61 @@ public:
         return nullptr;
     };
 
-    const std::shared_ptr<IElement> Get(const std::string_view& name) const
+    template<typename TElement>
+    const std::shared_ptr<TElement> Get(const std::string_view& name) const
     {
-        return Get(name);
+        return Get<TElement>(name);
     };
 
-    void Add(DataType dataType, const std::string_view& name)
+
+
+    template<typename TElement, DataType dataType>
+    std::shared_ptr<TElement> Add(const std::string_view& name)
+    {
+        if constexpr(std::is_same<TElement, StructElement>::value == true && dataType != DataType::Struct)
+        {
+            static_assert(false, "Incompatable (Struct) element types");
+        }
+        else if constexpr(std::is_same<TElement, ArrayElement>::value == true && dataType != DataType::Array)
+        {
+            static_assert(false, "Incompatable (Array) element types");
+        }
+        else if constexpr(std::is_same<TElement, ScalarElement>::value == true && (dataType == DataType::None || dataType == DataType::Struct || dataType == DataType::Array))
+        {
+            static_assert(false, "Incompatable (Scalar) element types");
+        };
+
+
+        const auto elementResult = Add(dataType, name);
+
+        return std::dynamic_pointer_cast<TElement, IElement>(elementResult);
+    };
+
+
+    template<typename TElement>
+    requires (std::is_base_of<IElement, TElement>::value == true)
+        std::shared_ptr<TElement> Add(const std::string_view& name)
+    {
+        if constexpr(std::is_same<TElement, StructElement>::value == true)
+        {
+            const auto elementResult = Add(DataType::Struct, name);
+            return std::dynamic_pointer_cast<StructElement, IElement>(elementResult);
+        }
+        else if constexpr(std::is_same<TElement, ArrayElement>::value == true)
+        {
+            const auto  elementResult = Add(DataType::Struct, name);
+            return std::dynamic_pointer_cast<ArrayElement, IElement>(elementResult);
+        }
+        else
+        {
+            static_assert(false, "Incompatable (Scalar) element types");
+        };
+    };
+
+
+private:
+
+    std::shared_ptr<IElement> Add(DataType dataType, const std::string_view& name)
     {
         wt::Assert(name.empty() == false, []()
         {
@@ -311,21 +393,25 @@ public:
 
         if(dataType == DataType::Struct)
         {
-            _structElements.emplace_back(std::make_pair(name, std::make_shared<StructElement>()));
+            auto elementResult = _structElements.emplace_back(std::make_pair(name, std::make_shared<StructElement>()));
+            return elementResult.second;
         }
         else if(dataType == DataType::Array)
         {
-            // _structElements.emplace_back(std::make_pair(name, std::make_shared<ArrayElement>()));
+            // TODO: This throws an error because "ArrayElement" is not defined, forward declaration won't work
+            // auto elementResult = _structElements.emplace_back(std::make_pair(name, std::make_shared<ArrayElement>()));
+            // return elementResult.second;
         };
 
-        _structElements.emplace_back(std::make_pair(name, std::make_shared<ScalarElement>(dataType)));
+        auto elementResult = _structElements.emplace_back(std::make_pair(name, std::make_shared<ScalarElement>(dataType)));
+        return elementResult.second;
     };
 
 };
 
 class ArrayElement : public IElement
 {
-    friend class Layout;
+    friend class SSBOLayout;
 
 private:
 
@@ -393,7 +479,6 @@ public:
         _arrayElementCount = elementCount;
     };
 
-
     std::shared_ptr<StructElement> SetCustomArrayType(std::size_t elementCount)
     {
         SetArray(DataType::Struct, elementCount);
@@ -414,14 +499,13 @@ public:
     {
         return _arrayElementCount;
     };
-
 };
 
 
 
 class RawLayout
 {
-    friend class Layout;
+    friend class SSBOLayout;
 
 private:
 
@@ -430,22 +514,14 @@ private:
 public:
 
 
-    template<typename TElement>
-    std::shared_ptr<TElement> Add(DataType dataType, const std::string_view& name)
-    {
-        auto elementResult = Add(dataType, name);
-
-        return std::dynamic_pointer_cast<TElement, IElement>(elementResult);
-    };
-
     template<typename TElement, DataType dataType>
     std::shared_ptr<TElement> Add(const std::string_view& name)
     {
-        if constexpr(std::is_same<TElement, StructElement>::value == true && dataType == DataType::Struct)
+        if constexpr(std::is_same<TElement, StructElement>::value == true && dataType != DataType::Struct)
         {
             static_assert(false, "Incompatable (Struct) element types");
         }
-        else if constexpr(std::is_same<TElement, ArrayElement>::value == true && dataType == DataType::Array)
+        else if constexpr(std::is_same<TElement, ArrayElement>::value == true && dataType != DataType::Array)
         {
             static_assert(false, "Incompatable (Array) element types");
         }
@@ -455,10 +531,31 @@ public:
         };
 
 
-        auto elementResult = Add(dataType, name);
+        const auto elementResult = Add(dataType, name);
 
         return std::dynamic_pointer_cast<TElement, IElement>(elementResult);
     };
+
+    template<typename TElement>
+    requires (std::is_base_of<IElement, TElement>::value == true)
+        std::shared_ptr<TElement> Add(const std::string_view& name)
+    {
+        if constexpr(std::is_same<TElement, StructElement>::value == true)
+        {
+            const auto elementResult = Add(DataType::Struct, name);
+            return std::dynamic_pointer_cast<StructElement, IElement>(elementResult);
+        }
+        else if constexpr(std::is_same<TElement, ArrayElement>::value == true)
+        {
+            const auto  elementResult = Add(DataType::Struct, name);
+            return std::dynamic_pointer_cast<ArrayElement, IElement>(elementResult);
+        }
+        else
+        {
+            static_assert(false, "Incompatable (Scalar) element types");
+        };
+    };
+
 
 private:
 
@@ -494,25 +591,24 @@ private:
 
         if(dataType == DataType::Struct)
         {
-            auto& insertResult = _layoutElements.emplace_back(std::make_pair(name, std::make_shared<StructElement>()));
-
+            auto insertResult = _layoutElements.emplace_back(std::make_pair(name, std::make_shared<StructElement>()));
             return insertResult.second;
         }
         else if(dataType == DataType::Array)
         {
-            auto& insertResult = _layoutElements.emplace_back(std::make_pair(name, std::make_shared<ArrayElement>()));
+            auto insertResult = _layoutElements.emplace_back(std::make_pair(name, std::make_shared<ArrayElement>()));
             return insertResult.second;
         };
 
 
-        auto& insertResult = _layoutElements.emplace_back(std::make_pair(name, std::make_shared<ScalarElement>(dataType)));
+        auto insertResult = _layoutElements.emplace_back(std::make_pair(name, std::make_shared<ScalarElement>(dataType)));
         return insertResult.second;
     };
 
 };
 
 
-class Layout
+class SSBOLayout
 {
 private:
 
@@ -522,7 +618,7 @@ private:
 public:
 
     // TODO: Maybe add move constructor for "RawLayout&&"?
-    Layout(RawLayout& rawLayout)
+    SSBOLayout(RawLayout& rawLayout)
     {
         const auto layout = CreateLayout(rawLayout);
         _layoutElements.insert(layout.begin(), layout.end());
@@ -738,21 +834,19 @@ private:
 
 
 
-
 void SSBOTest()
 {
     // Raw layout
     {
-
         // Uint32 - vec4 padding
         {
             RawLayout rawLayout;
 
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_0");
-            rawLayout.Add<ScalarElement>(DataType::Vec4f, "Vec4_off_16");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_0");
+            rawLayout.Add<ScalarElement, DataType::Vec4f>("Vec4_off_16");
 
 
-            Layout layout = Layout (rawLayout);
+            SSBOLayout layout = SSBOLayout (rawLayout);
 
             if(layout.Get<ScalarElement>("Uint_off_0")->GetOffset() != 0)
                 __debugbreak();
@@ -765,14 +859,14 @@ void SSBOTest()
         {
             RawLayout rawLayout;
 
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_0");
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_4");
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_8");
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_12");
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_16");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_0");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_4");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_8");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_12");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_16");
 
 
-            Layout layout = Layout (rawLayout);
+            SSBOLayout layout = SSBOLayout (rawLayout);
 
             if(layout.Get<ScalarElement>("Uint_off_0")->GetOffset() != 0)
                 __debugbreak();
@@ -791,10 +885,10 @@ void SSBOTest()
         {
             RawLayout rawLayout;
 
-            rawLayout.Add<ScalarElement>(DataType::Vec2f, "Vec2_off_0");
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_8");
+            rawLayout.Add<ScalarElement, DataType::Vec2f>("Vec2_off_0");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_8");
 
-            Layout layout = Layout (rawLayout);
+            SSBOLayout layout = SSBOLayout (rawLayout);
 
             if(layout.Get<ScalarElement>("Vec2_off_0")->GetOffset() != 0)
                 __debugbreak();
@@ -806,10 +900,10 @@ void SSBOTest()
         {
             RawLayout rawLayout;
 
-            rawLayout.Add<ScalarElement>(DataType::Vec2f, "Vec2_off_0");
-            rawLayout.Add<ScalarElement>(DataType::Vec2f, "Vec2_off_8");
+            rawLayout.Add<ScalarElement, DataType::Vec2f>("Vec2_off_0");
+            rawLayout.Add<ScalarElement, DataType::Vec2f>("Vec2_off_8");
 
-            Layout layout = Layout (rawLayout);
+            SSBOLayout layout = SSBOLayout (rawLayout);
 
             if(layout.Get<ScalarElement>("Vec2_off_0")->GetOffset() != 0)
                 __debugbreak();
@@ -822,11 +916,11 @@ void SSBOTest()
         {
             RawLayout rawLayout;
 
-            auto rawArrayElement = rawLayout.Add<ArrayElement>(DataType::Array, "Uint_off_0");
+            auto rawArrayElement = rawLayout.Add<ArrayElement, DataType::Array>("Uint_off_0");
 
             rawArrayElement->SetArray(DataType::UInt32, 4);
 
-            Layout layout = Layout(rawLayout);
+            SSBOLayout layout = SSBOLayout(rawLayout);
 
             auto arrayElement = layout.Get<ArrayElement>("Uint_off_0");
 
@@ -850,13 +944,13 @@ void SSBOTest()
         {
             RawLayout rawLayout;
 
-            auto rawArrayElement = rawLayout.Add<ArrayElement>(DataType::Array, "Uint_off_0");
+            auto rawArrayElement = rawLayout.Add<ArrayElement, DataType::Array>("Uint_off_0");
 
             rawArrayElement->SetArray(DataType::UInt32, 3);
 
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_12");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_12");
 
-            Layout layout = Layout(rawLayout);
+            SSBOLayout layout = SSBOLayout(rawLayout);
 
             auto arrayElement = layout.Get<ArrayElement>("Uint_off_0");
 
@@ -879,13 +973,13 @@ void SSBOTest()
         {
             RawLayout rawLayout;
 
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_0");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_0");
 
-            auto rawArrayElement = rawLayout.Add<ArrayElement>(DataType::Array, "Array_off_16");
+            auto rawArrayElement = rawLayout.Add<ArrayElement, DataType::Array>("Array_off_16");
 
             rawArrayElement->SetArray(DataType::Vec4f, 3);
 
-            Layout layout = Layout(rawLayout);
+            SSBOLayout layout = SSBOLayout(rawLayout);
 
             auto arrayElement = layout.Get<ArrayElement>("Array_off_16");
 
@@ -910,16 +1004,16 @@ void SSBOTest()
         {
             RawLayout structLayout;
 
-            structLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_0");
+            structLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_0");
 
-            auto rawStructElement = structLayout.Add<StructElement>(DataType::Struct, "Test_off_16");
+            auto rawStructElement = structLayout.Add<StructElement, DataType::Struct>("Test_off_16");
 
-            rawStructElement->Add(DataType::UInt32, "Test_Uint_off_16");
-            rawStructElement->Add(DataType::Vec4f, "Test_Vec4_off_32");
+            rawStructElement->Add<ScalarElement, DataType::UInt32>("Test_Uint_off_16");
+            rawStructElement->Add<ScalarElement, DataType::Vec4f>("Test_Vec4_off_32");
 
-            structLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_48");
+            structLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_48");
 
-            Layout layout = Layout(structLayout);
+            SSBOLayout layout = SSBOLayout(structLayout);
 
             auto structElement = layout.Get<StructElement>("Test_off_16");
 
@@ -930,10 +1024,10 @@ void SSBOTest()
             if(layout.Get<StructElement>("Test_off_16")->GetOffset() != 16)
                 __debugbreak();
 
-            if(structElement->Get("Test_Uint_off_16")->GetOffset() != 16)
+            if(structElement->Get<ScalarElement>("Test_Uint_off_16")->GetOffset() != 16)
                 __debugbreak();
 
-            if(structElement->Get("Test_Vec4_off_32")->GetOffset() != 32)
+            if(structElement->Get<ScalarElement>("Test_Vec4_off_32")->GetOffset() != 32)
                 __debugbreak();
 
             if(layout.Get<ScalarElement>("Uint_off_48")->GetOffset() != 48)
@@ -945,21 +1039,21 @@ void SSBOTest()
         {
             RawLayout structLayout;
 
-            structLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_0");
+            structLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_0");
 
-            auto rawStructElement = structLayout.Add<StructElement>(DataType::Struct, "Test_off_16");
+            auto rawStructElement = structLayout.Add<StructElement, DataType::Struct>("Test_off_16");
 
-            rawStructElement->Add(DataType::UInt32, "Test_Uint_off_16");
-            rawStructElement->Add(DataType::Vec4f, "Test_Vec4_off_32");
-
-
-            auto rawStructElement2 = structLayout.Add<StructElement>(DataType::Struct, "Test2_off_48");
-
-            rawStructElement2->Add(DataType::UInt32, "Test2_Uint_off_48");
-            rawStructElement2->Add(DataType::Mat4f, "Test2_Mat4_off_64");
+            rawStructElement->Add<ScalarElement, DataType::UInt32>("Test_Uint_off_16");
+            rawStructElement->Add<ScalarElement, DataType::Vec4f>("Test_Vec4_off_32");
 
 
-            Layout layout = Layout(structLayout);
+            auto rawStructElement2 = structLayout.Add<StructElement, DataType::Struct>("Test2_off_48");
+
+            rawStructElement2->Add<ScalarElement, DataType::UInt32>("Test2_Uint_off_48");
+            rawStructElement2->Add<ScalarElement, DataType::Vec4f>("Test2_Mat4_off_64");
+
+
+            SSBOLayout layout = SSBOLayout(structLayout);
 
             auto structElement = layout.Get<StructElement>("Test_off_16");
             auto structElement2 = layout.Get<StructElement>("Test2_off_48");
@@ -971,19 +1065,19 @@ void SSBOTest()
             if(layout.Get<StructElement>("Test_off_16")->GetOffset() != 16)
                 __debugbreak();
 
-            if(structElement->Get("Test_Uint_off_16")->GetOffset() != 16)
+            if(structElement->Get<ScalarElement>("Test_Uint_off_16")->GetOffset() != 16)
                 __debugbreak();
 
-            if(structElement->Get("Test_Vec4_off_32")->GetOffset() != 32)
+            if(structElement->Get<ScalarElement>("Test_Vec4_off_32")->GetOffset() != 32)
                 __debugbreak();
 
             if(layout.Get<StructElement>("Test2_off_48")->GetOffset() != 48)
                 __debugbreak();
 
-            if(structElement2->Get("Test2_Uint_off_48")->GetOffset() != 48)
+            if(structElement2->Get<ScalarElement>("Test2_Uint_off_48")->GetOffset() != 48)
                 __debugbreak();
 
-            if(structElement2->Get("Test2_Mat4_off_64")->GetOffset() != 64)
+            if(structElement2->Get<ScalarElement>("Test2_Mat4_off_64")->GetOffset() != 64)
                 __debugbreak();
 
 
@@ -996,18 +1090,18 @@ void SSBOTest()
         {
             RawLayout structArrayLayout;
 
-            auto rawArrayElement = structArrayLayout.Add<ArrayElement>(DataType::Array, "Test_off_0");
+            auto rawArrayElement = structArrayLayout.Add<ArrayElement, DataType::Array>("Test_off_0");
 
             auto arrayType = rawArrayElement->SetCustomArrayType(5);
 
-            arrayType->Add(DataType::UInt32, "Test_Uint_off_0");
-            arrayType->Add(DataType::Vec4f, "Test_Vec4_off_16");
+            arrayType->Add<ScalarElement, DataType::UInt32>("Test_Uint_off_0");
+            arrayType->Add<ScalarElement, DataType::Vec4f>("Test_Vec4_off_16");
 
 
-            structArrayLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_160");
+            structArrayLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_160");
 
 
-            Layout layout = Layout(structArrayLayout);
+            SSBOLayout layout = SSBOLayout(structArrayLayout);
 
             auto structArray = layout.Get<ArrayElement>("Test_off_0");
 
@@ -1020,10 +1114,10 @@ void SSBOTest()
                     __debugbreak();
 
 
-                if(structArray->GetAtIndex<StructElement>(i)->Get("Test_Uint_off_0")->GetOffset() != i * 32)
+                if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("Test_Uint_off_0")->GetOffset() != i * 32)
                     __debugbreak();
 
-                if(structArray->GetAtIndex<StructElement>(i)->Get("Test_Vec4_off_16")->GetOffset() != (i * 32) + 16)
+                if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("Test_Vec4_off_16")->GetOffset() != (i * 32) + 16)
                     __debugbreak();
             };
 
@@ -1037,19 +1131,19 @@ void SSBOTest()
         {
             RawLayout structArrayLayout;
 
-            structArrayLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_0");
+            structArrayLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_0");
 
-            auto rawArrayElement = structArrayLayout.Add<ArrayElement>(DataType::Array, "Test_off_16");
+            auto rawArrayElement = structArrayLayout.Add<ArrayElement, DataType::Array>("Test_off_16");
 
             auto arrayType = rawArrayElement->SetCustomArrayType(5);
 
-            arrayType->Add(DataType::UInt32, "Test_Uint_off_16");
-            arrayType->Add(DataType::Vec4f, "Test_Vec4_off_32");
+            arrayType->Add<ScalarElement, DataType::UInt32>("Test_Uint_off_16");
+            arrayType->Add<ScalarElement, DataType::Vec4f>("Test_Vec4_off_32");
 
-            structArrayLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_176");
+            structArrayLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_176");
 
 
-            Layout layout = Layout(structArrayLayout);
+            SSBOLayout layout = SSBOLayout(structArrayLayout);
 
             auto structArray = layout.Get<ArrayElement>("Test_off_16");
 
@@ -1062,10 +1156,10 @@ void SSBOTest()
                     __debugbreak();
 
 
-                if(structArray->GetAtIndex<StructElement>(i)->Get("Test_Uint_off_16")->GetOffset() != (i * 32) + 16)
+                if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("Test_Uint_off_16")->GetOffset() != (i * 32) + 16)
                     __debugbreak();
 
-                if(structArray->GetAtIndex<StructElement>(i)->Get("Test_Vec4_off_32")->GetOffset() != ((i * 32) + 16) + 16)
+                if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("Test_Vec4_off_32")->GetOffset() != ((i * 32) + 16) + 16)
                     __debugbreak();
             };
 
@@ -1079,13 +1173,13 @@ void SSBOTest()
         {
             RawLayout rawLayout;
 
-            rawLayout.Add<ScalarElement>(DataType::UInt32, "Uint_off_0");
+            rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_0");
 
-            auto rawStructElement = rawLayout.Add<StructElement>(DataType::Struct, "Struct_off_4");
+            auto rawStructElement = rawLayout.Add<StructElement, DataType::Struct>("Struct_off_4");
 
-            rawStructElement->Add(DataType::UInt32, "Struct.Uint_off_4");
+            rawStructElement->Add < ScalarElement, DataType::UInt32>("Struct.Uint_off_4");
 
-            Layout layout = Layout(rawLayout);
+            SSBOLayout layout = SSBOLayout(rawLayout);
 
             if(layout.Get<ScalarElement>("Uint_off_0")->GetOffset() != 0)
                 __debugbreak();
@@ -1094,7 +1188,7 @@ void SSBOTest()
                 __debugbreak();
 
 
-            if(layout.Get<StructElement>("Struct_off_4")->Get("Struct.Uint_off_4")->GetOffset() != 4)
+            if(layout.Get<StructElement>("Struct_off_4")->Get<ScalarElement>("Struct.Uint_off_4")->GetOffset() != 4)
                 __debugbreak();
 
         };
@@ -1106,18 +1200,56 @@ void SSBOTest()
     {
         RawLayout rawLayout;
 
-        auto rawStructLayout = rawLayout.Add<ScalarElement, DataType::UInt32>("struct");
+        auto rawStructLayout = rawLayout.Add<StructElement>("Test_Struct");
 
-        // rawStructLayout->
+        rawStructLayout->Add<ScalarElement, DataType::UInt32>("Test_Struct.Uint32");
 
+        SSBOLayout layout = SSBOLayout(rawLayout);
+
+        layout.Get<StructElement>("Test_Struct")->Get<ScalarElement>("Test_Struct.Uint32")->Set(1u);
     };
 
-
-
-
-
-    // layout.Add<DataType::UInt32>( "Uint_off_4");
 };
+
+
+
+constexpr std::size_t CalculateOffset(std::size_t rawOffset)
+{
+    const std::size_t correctedOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
+
+    return correctedOffset;
+};
+
+constexpr bool CrossesBoundary(std::size_t offset, std::size_t sizeInBytes)
+{
+    const std::size_t end = offset + sizeInBytes;
+
+    const std::size_t pageStart = offset / 16u;
+    const std::size_t pageEnd = end / 16u;
+
+    return ((pageStart != pageEnd) && (end % 16 != 0u)) || (sizeInBytes > 16u);
+};
+
+constexpr std::size_t GetCorrectOffset(std::size_t offset, std::size_t sizeInBytes)
+{
+    const bool crossesBoundary = CrossesBoundary(offset, sizeInBytes);
+
+    if(crossesBoundary == true)
+    {
+        const std::size_t rawOffset = offset;
+
+        const std::size_t actualOffset = CalculateOffset(rawOffset);
+
+        const std::size_t padding = actualOffset - offset;
+
+        return actualOffset;
+    }
+    else
+    {
+        return offset;
+    };
+};
+
 
 
 
@@ -1224,479 +1356,3 @@ int main()
         glfwSwapBuffers(glfwWindow);
     };
 };
-
-
-
-/*
-
-
-enum class DataType
-{
-    UInt32,
-
-    Vec2f,
-
-    Vec4f,
-
-    Mat4f,
-
-    Array,
-
-    Struct,
-
-    None,
-};
-
-
-constexpr std::size_t DataTypeSizeInBytes(DataType type)
-{
-    switch(type)
-    {
-        case DataType::UInt32:
-            return sizeof(std::uint32_t);
-            break;
-
-        case DataType::Vec2f:
-            return sizeof(glm::vec2);
-            break;
-
-        case DataType::Vec4f:
-            return sizeof(glm::vec4);
-            break;
-
-        case DataType::Mat4f:
-            return sizeof(glm::mat4);
-            break;
-
-
-        case DataType::Array:
-        case DataType::Struct:
-            return 0;
-            break;
-
-        default:
-        {
-            wt::Assert(false, "No such type");
-            __debugbreak();
-        };
-    };
-};
-
-
-
-class Layout;
-
-class Element
-{
-    friend class Layout;
-
-private:
-
-    std::vector<std::pair<std::string, Element>> _structElements;
-
-    std::vector<Element> _arrayElements;
-
-    DataType _elementType = DataType::None;
-
-    std::size_t _sizeInBytes = 0;
-
-    std::size_t _offset = 0;
-
-    DataType _arrayElementType = DataType::None;
-
-    std::size_t _arrayElementCount = static_cast<std::size_t>(-1);
-
-
-public:
-
-    Element(DataType type) :
-        _elementType(type),
-        _sizeInBytes(DataTypeSizeInBytes(type))
-    {
-    };
-
-
-public:
-
-    Element& GetAtIndex(std::size_t index)
-    {
-        wt::Assert(_elementType == DataType::Array, []()
-        {
-            return "Cannot index into non-array element";
-        });
-
-        wt::Assert(_arrayElements.empty() == false, []()
-        {
-            return "Element array is empty";
-        });
-
-        wt::Assert(index >= 0 && index < _arrayElements.size(),
-                   []()
-        {
-            return "Invalid index";
-        });
-
-        Element& element = _arrayElements[index];
-
-        return element;
-    };
-
-    const Element& GetAtIndex(std::size_t index) const
-    {
-        return GetAtIndex(index);
-    };
-
-
-    Element* Get(const std::string_view& name)
-    {
-        wt::Assert(_elementType == DataType::Struct, [&]()
-        {
-            return "Attempting to retrieve struct member on non-struct element";
-        });
-
-        for(auto& [elementName, structElement] : _structElements)
-        {
-            if(elementName == name)
-            {
-                return &structElement;
-            };
-        };
-
-        wt::Assert(false, [&]()
-        {
-            return std::string("No such element \"").append(name).append("\" was found");
-        });
-
-        return nullptr;
-    };
-
-    const Element* Get(const std::string_view& name) const
-    {
-        return Get(name);
-    };
-
-
-    void Add(DataType dataType, const std::string_view& name)
-    {
-        wt::Assert(name.empty() == false, []()
-        {
-            return "Invalid member name";
-        });
-
-        wt::Assert(_elementType == DataType::Struct, []()
-        {
-            return "Trying to add struct member to non-struct element";
-        });
-
-        wt::Assert(dataType != DataType::None, []()
-        {
-            return "Invalid data type";
-        });
-
-        wt::Assert([&]()
-        {
-            for(auto& [elementName, structElement] : _structElements)
-            {
-                if(elementName == name)
-                {
-                    return false;
-                };
-            };
-
-            return true;
-        },
-                   [&]()
-        {
-            return std::string("Duplicate member name \"").append(name).append("\"");
-        });
-
-
-        _structElements.emplace_back(std::make_pair(name, Element(dataType)));
-    };
-
-
-    void SetArray(DataType arrayType, std::size_t elementCount)
-    {
-        wt::Assert(elementCount >= 1, []()
-        {
-            return "Invalid array size";
-        });
-
-        wt::Assert(arrayType != DataType::None, []()
-        {
-            return "Invalid data type";
-        });
-
-        _arrayElementType = arrayType;
-        _arrayElementCount = elementCount;
-    };
-
-    Element& SetCustomArrayType(std::size_t elementCount)
-    {
-        SetArray(DataType::Struct, elementCount);
-
-        return _arrayElements.emplace_back(_arrayElementType);
-    };
-
-
-public:
-
-    std::size_t GetOffset() const
-    {
-        return _offset;
-    };
-
-};
-
-
-
-class RawLayout
-{
-    friend class Layout;
-
-private:
-
-    std::vector<std::pair<std::string, Element>> _layoutElements;
-
-public:
-
-    Element& Add(DataType dataType, const std::string_view& name)
-    {
-        wt::Assert(name.empty() == false, []()
-        {
-            return "Invalid member name";
-        });
-
-        wt::Assert(dataType != DataType::None, []()
-        {
-            return "Invalid data type";
-        });
-
-        wt::Assert([&]()
-        {
-            for(auto& [elementName, structElement] : _layoutElements)
-            {
-                if(elementName == name)
-                {
-                    return false;
-                };
-            };
-
-            return true;
-        },
-                   [&]()
-        {
-            return std::string("Duplicate member name \"").append(name).append("\"");
-        });
-
-        auto& insertResult = _layoutElements.emplace_back(std::make_pair(name, Element(dataType)));
-
-        return insertResult.second;
-    };
-
-};
-
-
-class Layout
-{
-private:
-
-    std::unordered_map<std::string, Element> _layoutElements;
-
-
-public:
-
-    // TODO: Maybe add move constructor for "RawLayout&&"?
-    Layout(RawLayout& rawLayout)
-    {
-        const auto layout = CreateLayout(rawLayout);
-        _layoutElements.insert(layout.begin(), layout.end());
-    };
-
-
-public:
-
-    Element* Get(const std::string_view& name)
-    {
-        wt::Assert(_layoutElements.empty() == false, [&]()
-        {
-            return std::string("Layout is empty");
-        });
-
-        auto findResult = _layoutElements.find(name.data());
-
-        wt::Assert(findResult != _layoutElements.end(), [&]()
-        {
-            return std::string("No such element \"").append(name).append("\" was found");
-        });
-
-
-        return &findResult->second;
-    };
-
-    const Element* Get(const std::string_view& name) const
-    {
-        return Get(name);
-    };
-
-
-private:
-
-    std::vector<std::pair<std::string, Element>> CreateLayout(RawLayout& rawLayout, std::size_t offset = 0) const
-    {
-        std::vector<std::pair<std::string, Element>> layoutResult;
-
-        std::size_t currentOffset = offset;
-
-
-        for(auto& [name, element] : rawLayout._layoutElements)
-        {
-            if(element._elementType == DataType::Array)
-            {
-                if(element._arrayElementType == DataType::Struct)
-                {
-                    RawLayout rawArrayStructLayout;
-
-                    for(std::size_t i = 0; i < element._arrayElementCount; ++i)
-                    {
-                        Element& rawStructLayout = rawArrayStructLayout.Add(DataType::Struct, std::string("[").append(std::to_string(i)).append("]"));
-
-                        for(auto& [name, structElement] : element._arrayElements[0]._structElements)
-                        {
-                            rawStructLayout.Add(structElement._elementType, name);
-                        };
-                    };
-
-                    const auto arrayStructLayout = CreateLayout(rawArrayStructLayout, currentOffset);
-
-
-                    element._arrayElements.clear();
-
-                    for(auto& arrayStructElement : arrayStructLayout)
-                    {
-                        element._arrayElements.emplace_back(arrayStructElement.second);
-                    };
-
-                    const auto arrayStructLayoutEnd = std::prev((arrayStructLayout.cend()));
-                    currentOffset = arrayStructLayoutEnd->second._offset + arrayStructLayoutEnd->second._sizeInBytes;
-                }
-                else
-                {
-                    const std::size_t arrayElementSizeInBytes = DataTypeSizeInBytes(element._arrayElementType);
-                    element._offset = GetCorrectOffset(currentOffset, arrayElementSizeInBytes);
-                    element._sizeInBytes = arrayElementSizeInBytes * element._arrayElementCount;
-
-                    RawLayout rawArrayLayout;
-
-                    for(std::size_t i = 0; i < element._arrayElementCount; ++i)
-                    {
-                        rawArrayLayout.Add(element._arrayElementType, std::string("[").append(std::to_string(i)).append("]"));
-                    };
-
-                    const auto arrayLayout = CreateLayout(rawArrayLayout, currentOffset);
-
-                    for(auto& arrayLayoutElement : arrayLayout)
-                    {
-                        element._arrayElements.emplace_back(arrayLayoutElement.second);
-                    };
-
-                    const auto arrayLayoutEnd = std::prev((arrayLayout.cend()));
-                    currentOffset = arrayLayoutEnd->second._offset + arrayElementSizeInBytes;
-                };
-            }
-            else if(element._elementType == DataType::Struct)
-            {
-                RawLayout rawStructLayout;
-
-                for(auto& [name, structElement] : element._structElements)
-                {
-                    rawStructLayout.Add(structElement._elementType, name);
-                };
-
-                // TODO: Find a way to optimize struct size
-
-                // Calculate struct size
-                const auto structLayoutInitial = CreateLayout(rawStructLayout, 0);
-
-                auto structLayoutEnd = std::prev(structLayoutInitial.end());
-
-                const std::size_t structSize = structLayoutEnd->second._offset + structLayoutEnd->second._sizeInBytes;
-
-
-                element._offset = GetCorrectOffset(currentOffset, structSize);
-                currentOffset = element._offset;
-
-                element._sizeInBytes = structSize;
-
-
-                const auto structLayoutFinal = CreateLayout(rawStructLayout, currentOffset);
-
-                element._structElements.clear();
-
-                for(auto& structLayoutElement : structLayoutFinal)
-                {
-                    element._structElements.emplace_back(structLayoutElement);
-                };
-
-                structLayoutEnd = std::prev(structLayoutFinal.cend());
-                currentOffset = structLayoutEnd->second._offset + structLayoutEnd->second._sizeInBytes;
-            }
-            else
-            {
-                element._offset = GetCorrectOffset(currentOffset, element._sizeInBytes);
-                currentOffset = element._offset + element._sizeInBytes;
-            };
-
-
-            layoutResult.emplace_back(std::make_pair(name, element));
-        };
-
-        return layoutResult;
-    };
-
-
-    constexpr std::size_t GetCorrectOffset(std::size_t offset, std::size_t sizeInBytes) const
-    {
-        const bool crossesBoundary = CrossesBoundary(offset, sizeInBytes);
-
-        if(crossesBoundary == true)
-        {
-            const std::size_t rawOffset = offset;
-
-            const std::size_t actualOffset = CalculateOffset(rawOffset);
-
-            const std::size_t padding = actualOffset - offset;
-
-            return actualOffset;
-        }
-        else
-        {
-            return offset;
-        };
-    };
-
-    constexpr std::size_t CalculateOffset(std::size_t rawOffset) const
-    {
-        const std::size_t correctedOffset = rawOffset + (16u - rawOffset % 16u) % 16u;
-
-        return correctedOffset;
-    };
-
-    /// <summary>
-    /// Check if an element crosses a 16-byte boundary
-    /// </summary>
-    /// <param name="offset"> </param>
-    /// <param name="size"></param>
-    /// <returns></returns>
-    constexpr bool CrossesBoundary(std::size_t offset, std::size_t sizeInBytes) const
-    {
-        const std::size_t end = offset + sizeInBytes;
-
-        const std::size_t pageStart = offset / 16u;
-        const std::size_t pageEnd = end / 16u;
-
-        return ((pageStart != pageEnd) && (end % 16 != 0u)) || (sizeInBytes > 16u);
-    };
-
-};
-*/
