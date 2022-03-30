@@ -5,6 +5,9 @@
     <ClCompile Include="Includes\glad\glad.c">
       <Filter>GLUtils</Filter>
     </ClCompile>
+    <ClCompile Include="DynamicSSBO.cpp">
+      <Filter>GLUtils</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\FontSpriteVertexShader.glsl">
@@ -23,6 +26,9 @@
       <Filter>GLUtils</Filter>
     </ClInclude>
     <ClInclude Include="FontSprite.hpp">
+      <Filter>GLUtils</Filter>
+    </ClInclude>
+    <ClInclude Include="DynamicSSBO.hpp">
       <Filter>GLUtils</Filter>
     </ClInclude>
   </ItemGroup>
