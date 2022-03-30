@@ -103,6 +103,7 @@ GLFWwindow* InitializeGLFWWindow(int windowWidth, int windowHeight, const std::s
 
 void SetupOpenGL()
 {
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
     glEnable(GL_DEBUG_OUTPUT);
     glDebugMessageCallback(GLDebugCallback, nullptr);
 
@@ -112,12 +113,8 @@ void SetupOpenGL()
 
 
 
-
-
 int main()
 {
-    SSBOTest();
-
     constexpr std::uint32_t initialWindowWidth = 800;
     constexpr std::uint32_t initialWindowHeight = 600;
 
@@ -137,7 +134,7 @@ int main()
     fontSprite.Transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
 
 
-    static std::string textToDraw = "Type anything!";
+    static std::string textToDraw = "Type anything!Type anything!Type ";
 
 
     // Keyboard input handler

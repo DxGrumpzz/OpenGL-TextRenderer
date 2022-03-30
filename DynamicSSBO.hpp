@@ -4,6 +4,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
+#include <glad/glad.h>
 
 #include "WindowsUtilities.hpp"
 
@@ -116,7 +117,7 @@ public:
 public:
 
     template<typename T>
-    void Set(const T& value)
+    void Set(const std::uint32_t bufferID, const T& value) const
     {
         switch(_elementType)
         {
@@ -126,20 +127,41 @@ public:
                 {
                     return std::string("Invalid value type. Expected \"DataType::UInt32\"");
                 });
-
                 break;
             };
 
             case DataType::Vec2f:
+            {
+                wt::Assert(std::is_same <T, glm::vec2>::value == true, []()
+                {
+                    return std::string("Invalid value type. Expected \"DataType::Vec2f\"");
+                });
                 break;
+            };
+
             case DataType::Vec4f:
+            {
+                wt::Assert(std::is_same <T, glm::vec4>::value == true, []()
+                {
+                    return std::string("Invalid value type. Expected \"DataType::Vec4f\"");
+                });
                 break;
+            };
+
             case DataType::Mat4f:
+            {
+                wt::Assert(std::is_same <T, glm::mat4>::value == true, []()
+                {
+                    return std::string("Invalid value type. Expected \"DataType::Mat4f\"");
+                });
                 break;
+            };
 
             default:
                 wt::Assert(false, "Invalid element");
         };
+
+        glNamedBufferSubData(bufferID, _offset, _sizeInBytes, &value);
     };
 };
 
@@ -392,7 +414,7 @@ public:
         }
         else if constexpr(std::is_same<TElement, ArrayElement>::value == true)
         {
-            const auto  elementResult = Add(DataType::Struct, name);
+            const auto  elementResult = Add(DataType::Array, name);
             return std::dynamic_pointer_cast<ArrayElement, IElement>(elementResult);
         }
         else
@@ -454,7 +476,10 @@ private:
 
 class SSBOLayout
 {
+
 private:
+
+    std::size_t _sizeInBytes = 0;
 
     std::unordered_map<std::string, std::shared_ptr<IElement>> _layoutElements;
 
@@ -464,6 +489,11 @@ public:
     SSBOLayout(RawLayout& rawLayout)
     {
         const auto layout = CreateLayout(rawLayout);
+
+        auto endElement = layout.back().second;
+
+        _sizeInBytes = endElement->GetOffset() + endElement->GetSizeInBytes();
+
         _layoutElements.insert(layout.begin(), layout.end());
     };
 
@@ -497,9 +527,29 @@ public:
     requires std::derived_from<TElement, IElement>
         const std::shared_ptr<TElement> Get(const std::string_view& name) const
     {
-        auto element = Get<TElement>(name);
+        wt::Assert(_layoutElements.empty() == false, [&]()
+        {
+            return std::string("Layout is empty");
+        });
+
+        auto findResult = _layoutElements.find(name.data());
+
+        wt::Assert(findResult != _layoutElements.end(), [&]()
+        {
+            return std::string("No such element \"").append(name).append("\" was found");
+        });
+
+        const auto element = std::dynamic_pointer_cast<TElement, IElement>(findResult->second);
+
+        wt::Assert(element != nullptr, "Invalid element cast");
 
         return element;
+    };
+
+
+    constexpr std::size_t GetSizeInBytes() const
+    {
+        return _sizeInBytes;
     };
 
 
