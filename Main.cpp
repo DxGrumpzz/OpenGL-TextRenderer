@@ -8,7 +8,8 @@
 #include "FontSprite.hpp"
 #include "ShaderStorageBuffer.hpp"
 #include "WindowsUtilities.hpp"
-#include "DynamicSSBO.hpp"
+
+#include "DynamicSSBO.Test.hpp"
 
 
 static int WindowWidth = 0;
@@ -115,6 +116,10 @@ void SetupOpenGL()
 
 int main()
 {
+    TestDynamicSSBO();
+
+
+
     constexpr std::uint32_t initialWindowWidth = 800;
     constexpr std::uint32_t initialWindowHeight = 600;
 
@@ -123,10 +128,10 @@ int main()
 
     SetupOpenGL();
 
+
     const ShaderProgram shaderProgram = ShaderProgram("Shaders\\FontSpriteVertexShader.glsl", "Shaders\\FontSpriteFragmentShader.glsl");
 
     FontSprite fontSprite = FontSprite(13, 24, shaderProgram, L"Resources\\Consolas13x24.bmp");
-
 
     // Calculate projection and transform
     fontSprite.ScreenSpaceProjection = glm::ortho(0.0f, static_cast<float>(WindowWidth), static_cast<float>(WindowHeight), 0.0f, -1.0f, 1.0f);
@@ -134,7 +139,7 @@ int main()
     fontSprite.Transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
 
 
-    static std::string textToDraw = "Type anything!Type anything!Type ";
+    static std::string textToDraw = "Type anything!";
 
 
     // Keyboard input handler
