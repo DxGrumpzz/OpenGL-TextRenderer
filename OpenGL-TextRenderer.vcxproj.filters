@@ -6,7 +6,7 @@
       <Filter>GLUtils</Filter>
     </ClCompile>
     <ClCompile Include="DynamicSSBO.cpp">
-      <Filter>GLUtils</Filter>
+      <Filter>GLUtils\DynamicSSBO</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -29,7 +29,10 @@
       <Filter>GLUtils</Filter>
     </ClInclude>
     <ClInclude Include="DynamicSSBO.hpp">
-      <Filter>GLUtils</Filter>
+      <Filter>GLUtils\DynamicSSBO</Filter>
+    </ClInclude>
+    <ClInclude Include="DynamicSSBO.Test.hpp">
+      <Filter>GLUtils\DynamicSSBO</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -38,6 +41,9 @@
     </Filter>
     <Filter Include="Shaders">
       <UniqueIdentifier>{8b6ecf1b-9b80-4391-953d-7a18c11cbdd7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GLUtils\DynamicSSBO">
+      <UniqueIdentifier>{e2545b3b-a569-426b-ba32-0706eabe083b}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

@@ -89,9 +89,7 @@ private:
 
     std::reference_wrapper<const ShaderProgram> _shaderProgram;
 
-    mutable std::optional<SSBOLayout> _inputSSBO2;
-    mutable std::uint32_t _inputSSBO2BufferID = 0;
-
+    mutable std::optional<SSBOLayout> _inputSSBO;
 
     /// <summary>
     /// Character capacity, how many character we can write before we need to reallocate the buffer
@@ -173,21 +171,17 @@ public:
         auto rawCharacterArrayLayout = rawInputLayout.Add<ArrayElement>("Characters");
         rawCharacterArrayLayout->SetArray(DataType::UInt32, _capacity);
 
-        _inputSSBO2 = SSBOLayout(rawInputLayout);
 
-        glCreateBuffers(1, &_inputSSBO2BufferID);
-
-        glNamedBufferData(_inputSSBO2BufferID, _inputSSBO2->GetSizeInBytes(), nullptr, GL_DYNAMIC_COPY);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _inputSSBO2BufferID);
+        _inputSSBO = SSBOLayout(rawInputLayout);
 
         
-        _inputSSBO2->Get<ScalarElement>("GlyphWidth")->Set(_inputSSBO2BufferID, _glyphWidth);
-        _inputSSBO2->Get<ScalarElement>("GlyphHeight")->Set(_inputSSBO2BufferID, _glyphHeight);
+        _inputSSBO->Get<ScalarElement>("GlyphWidth")->Set(_glyphWidth);
+        _inputSSBO->Get<ScalarElement>("GlyphHeight")->Set(_glyphHeight);
 
-        _inputSSBO2->Get<ScalarElement>("TextureWidth")->Set(_inputSSBO2BufferID, _fontSpriteWidth);
-        _inputSSBO2->Get<ScalarElement>("TextureHeight")->Set(_inputSSBO2BufferID, _fontSpriteHeight);
+        _inputSSBO->Get<ScalarElement>("TextureWidth")->Set(_fontSpriteWidth);
+        _inputSSBO->Get<ScalarElement>("TextureHeight")->Set(_fontSpriteHeight);
         
-        _inputSSBO2->Get<ScalarElement>("ChromaKey")->Set(_inputSSBO2BufferID, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        _inputSSBO->Get<ScalarElement>("ChromaKey")->Set(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
        
         // TODO: Refactor
     };
@@ -216,8 +210,7 @@ public:
 
         glBindBuffer(GL_ARRAY_BUFFER, _glyphVertexPositionsVBO);
 
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _inputSSBO2BufferID);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _inputSSBO2BufferID);
+        _inputSSBO->Bind();
     };
 
 
@@ -229,9 +222,7 @@ public:
         // Allocate buffer memory if necessary
         if(text.size() > _capacity)
         {
-            _capacity = (text.size() + (_capacity / 2));
-            std::size_t previousBufferSizeInBytes = _inputSSBO2->GetSizeInBytes();
-            
+            // Create a new RawLayout which will hold more data
             RawLayout rawInputLayout;
 
             rawInputLayout.Add<ScalarElement, DataType::UInt32>("GlyphWidth");
@@ -245,23 +236,19 @@ public:
             rawInputLayout.Add<ScalarElement, DataType::Vec4f>("TextColour");
 
             auto rawCharacterArrayLayout = rawInputLayout.Add<ArrayElement>("Characters");
+
+            // Calculate new capacity size
+            _capacity = (text.size() + (_capacity / 2));
             rawCharacterArrayLayout->SetArray(DataType::UInt32, _capacity);
 
+            // Finalize the new layout, and create the new buffer
+            SSBOLayout newSSBOLayout = SSBOLayout(rawInputLayout);
 
-            _inputSSBO2 = SSBOLayout(rawInputLayout);
+            // Copy data from the old buffer into the newer
+            newSSBOLayout.CopyBufferData(_inputSSBO.value());
 
-
-            std::uint32_t newInputBuffer = 0;
-            glCreateBuffers(1, &newInputBuffer);
-
-            glNamedBufferData(newInputBuffer, _inputSSBO2->GetSizeInBytes(), nullptr, GL_DYNAMIC_COPY);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, newInputBuffer);
-
-            glCopyNamedBufferSubData(_inputSSBO2BufferID, newInputBuffer, 0, 0, previousBufferSizeInBytes);
-
-            glDeleteBuffers(1, &_inputSSBO2BufferID);
-
-            _inputSSBO2BufferID = newInputBuffer;
+            // Move the new buffer into _inputSSBO. Thus, deleting the old buffer
+            _inputSSBO = std::move(newSSBOLayout);
         };
 
 
@@ -271,7 +258,7 @@ public:
 
 
         // Set text foreground colour
-        _inputSSBO2->Get<ScalarElement>("TextColour")->Set(_inputSSBO2BufferID, textColour);
+        _inputSSBO->Get<ScalarElement>("TextColour")->Set(textColour);
 
 
         // Copy texts' characters to the SSBO
@@ -280,7 +267,7 @@ public:
         {
             const std::uint32_t& characterAsInt = character;
 
-            _inputSSBO2->Get<ArrayElement>("Characters")->GetAtIndex<ScalarElement>(index)->Set(_inputSSBO2BufferID, characterAsInt);
+            _inputSSBO->Get<ArrayElement>("Characters")->GetAtIndex<ScalarElement>(index)->Set(characterAsInt);
             index++;
         };
 

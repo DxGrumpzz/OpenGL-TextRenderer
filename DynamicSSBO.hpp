@@ -146,6 +146,16 @@ public:
 /// </summary>
 class ScalarElement : public IElement
 {
+    // TODO: There has to be a better way to "feed" the buffer id to the elements
+    friend class SSBOLayout;
+
+private:
+
+    /// <summary>
+    /// The GL buffer ID associated with this layout
+    /// </summary>
+    std::uint32_t _bufferID = 0;
+
 public:
 
     ScalarElement(DataType type)
@@ -156,6 +166,7 @@ public:
 
 public:
 
+
     /// <summary>
     /// Updates this element's value in the associated SSBO, in bufferID. 
     /// (I know, it's not very ideal atm)
@@ -164,7 +175,7 @@ public:
     /// <param name="bufferID"></param>
     /// <param name="value"></param>
     template<typename T>
-    void Set(const std::uint32_t bufferID, const T& value) const
+    void Set(const T& value) const
     {
         // Ensure T matches this element's DataType
         switch(_elementType)
@@ -210,7 +221,7 @@ public:
         };
 
         // Update value in GPU
-        glNamedBufferSubData(bufferID, _offset, _sizeInBytes, &value);
+        glNamedBufferSubData(_bufferID, _offset, _sizeInBytes, &value);
     };
 };
 
@@ -339,8 +350,8 @@ public:
     /// <typeparam name="TElement"> The element type to add, must be derived from IElement </typeparam>
     /// <param name="name"> The name of the new element </param>
     /// <returns></returns>
-    template<typename TElement> 
-    requires std::derived_from<TElement, IElement> 
+    template<typename TElement>
+    requires std::derived_from<TElement, IElement>
         std::shared_ptr<TElement> Add(const std::string_view& name)
     {
         // Add the new element depending on if it's a struct, or an array.
@@ -653,31 +664,86 @@ private:
     /// </summary>
     std::size_t _sizeInBytes = 0;
 
-
     /// <summary>
     /// The list of elements associated with this layout
     /// </summary>
     std::unordered_map<std::string, std::shared_ptr<IElement>> _layoutElements;
 
+    /// <summary>
+    /// The GL buffer ID associated with this layout
+    /// </summary>
+    std::uint32_t _bufferID = 0;
+
+    /// <summary>
+    /// Which binding point the GL buffer is bound to
+    /// </summary>
+    std::uint32_t _bindingPoint = 0;
+
 
 public:
 
 
-    SSBOLayout(RawLayout& rawLayout)
+    SSBOLayout(RawLayout& rawLayout, std::uint32_t bindingPoint = 0, std::uint32_t usage = GL_DYNAMIC_COPY) :
+        _bindingPoint(bindingPoint)
     {
+
+        // Create the GL buffer
+        glCreateBuffers(1, &_bufferID);
+        Bind();
+
         // Create the element layout
         const auto layout = CreateLayout(rawLayout);
 
         // Get the last element, so we can calculate the total size in bytes
-        auto& endElement = layout.back();
+        const auto& endElement = layout.back();
         _sizeInBytes = endElement.second->GetOffset() + endElement.second->GetSizeInBytes();
 
         // Add the completed list of elements to the layout list
         _layoutElements.insert(layout.begin(), layout.end());
+
+        // Set the buffer's data size
+        glNamedBufferData(_bufferID, _sizeInBytes, nullptr, usage);
     };
 
 
+    SSBOLayout(SSBOLayout&& movedSSBOLayout) noexcept
+    {
+        std::swap(_sizeInBytes, movedSSBOLayout._sizeInBytes);
+        std::swap(_bufferID, movedSSBOLayout._bufferID);
+        std::swap(_bindingPoint, movedSSBOLayout._bindingPoint);
+
+        std::swap(_layoutElements, movedSSBOLayout._layoutElements);
+    };
+
+    SSBOLayout(SSBOLayout&) = delete;
+
+
+
+    ~SSBOLayout()
+    {
+        glDeleteBuffers(1, &_bufferID);
+    };
+
 public:
+
+    void Bind() const
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _bufferID);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _bindingPoint, _bufferID);
+    };
+
+
+    /// <summary>
+    /// Copy GL buffer data from "readLayout" into this buffer
+    /// </summary>
+    /// <param name="readLayout"> The buffer at which to copy from </param>
+    void CopyBufferData(const SSBOLayout& readLayout) const
+    {
+        wt::Assert(_sizeInBytes < readLayout.GetBufferID(), "Copy-Write buffer is too small");
+
+        glCopyNamedBufferSubData(readLayout.GetBufferID(), _bufferID, 0, 0, readLayout.GetSizeInBytes());
+    };
+
 
     /// <summary>
     /// Retrieve an element 
@@ -738,9 +804,32 @@ public:
     };
 
 
+
+public:
+
     constexpr std::size_t GetSizeInBytes() const
     {
         return _sizeInBytes;
+    };
+
+    constexpr std::size_t GetBufferID() const
+    {
+        return _bufferID;
+    };
+
+public:
+
+    SSBOLayout& operator = (SSBOLayout&) = delete;
+
+    SSBOLayout& operator = (SSBOLayout&& movedSSBOLayout) noexcept
+    {
+        std::swap(_sizeInBytes, movedSSBOLayout._sizeInBytes);
+        std::swap(_bufferID, movedSSBOLayout._bufferID);
+        std::swap(_bindingPoint, movedSSBOLayout._bindingPoint);
+
+        std::swap(_layoutElements, movedSSBOLayout._layoutElements);
+
+        return *this;
     };
 
 
@@ -774,7 +863,7 @@ private:
                 if(arrayElement->GetArrayElementType() == DataType::Struct)
                 {
                     RawLayout rawArrayStructLayout;
-                    
+
                     // The structure of defintion of the array's struct 
                     const auto structLayout = std::dynamic_pointer_cast<StructElement, IElement>(arrayElement->_arrayElements[0]);
 
@@ -893,6 +982,10 @@ private:
             // If the element is a scalar element..
             else
             {
+                auto elementAsScalar = std::dynamic_pointer_cast<ScalarElement, IElement>(element);
+
+                elementAsScalar->_bufferID = _bufferID;
+
                 // Simply, calaculate the offset, and we're done
                 element->_offset = GetCorrectOffset(currentOffset, element->GetSizeInBytes());
                 currentOffset = element->GetOffset() + element->GetSizeInBytes();

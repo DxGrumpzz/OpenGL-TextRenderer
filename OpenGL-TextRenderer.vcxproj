@@ -189,6 +189,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DynamicSSBO.hpp" />
+    <ClInclude Include="DynamicSSBO.Test.hpp" />
     <ClInclude Include="FontSprite.hpp" />
     <ClInclude Include="ShaderProgram.hpp" />
     <ClInclude Include="ShaderStorageBuffer.hpp" />
