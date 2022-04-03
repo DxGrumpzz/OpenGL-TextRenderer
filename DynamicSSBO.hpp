@@ -24,9 +24,19 @@ enum class DataType
     Vec2f,
 
     /// <summary>
+    /// Two component unsigned 32-bit integer vector
+    /// </summary>
+    Vec2ui,
+
+    /// <summary>
     /// Four component 32-bit float vector
     /// </summary>
     Vec4f,
+
+    /// <summary>
+    /// Four component unsigned 32-bit integer vector
+    /// </summary>
+    Vec4ui,
 
     /// <summary>
     /// Four by four matrix of floats
@@ -57,25 +67,26 @@ inline constexpr std::size_t DataTypeSizeInBytes(DataType type)
     {
         case DataType::UInt32:
             return sizeof(std::uint32_t);
-            break;
 
         case DataType::Vec2f:
             return sizeof(glm::vec2);
-            break;
+
+        case DataType::Vec2ui:
+            return sizeof(glm::u32vec2);
 
         case DataType::Vec4f:
             return sizeof(glm::vec4);
-            break;
+
+        case DataType::Vec4ui:
+            return sizeof(glm::u32vec4);
 
         case DataType::Mat4f:
             return sizeof(glm::mat4);
-            break;
 
 
         case DataType::Array:
         case DataType::Struct:
             return 0;
-            break;
 
         default:
         {
@@ -85,6 +96,8 @@ inline constexpr std::size_t DataTypeSizeInBytes(DataType type)
         };
     };
 };
+
+
 
 // Forward declarations
 class SSBOLayout;
@@ -182,37 +195,37 @@ public:
         {
             case DataType::UInt32:
             {
-                wt::Assert(std::is_same <T, std::uint32_t>::value == true, []()
-                {
-                    return std::string("Invalid value type. Expected \"DataType::UInt32\"");
-                });
+                wt::Assert(std::is_same <T, std::uint32_t>::value == true, "Invalid value type. Expected \"DataType::UInt32\"");
                 break;
             };
 
             case DataType::Vec2f:
             {
-                wt::Assert(std::is_same <T, glm::vec2>::value == true, []()
-                {
-                    return std::string("Invalid value type. Expected \"DataType::Vec2f\"");
-                });
+                wt::Assert(std::is_same <T, glm::vec2>::value == true, "Invalid value type. Expected \"DataType::Vec2f\"");
+                break;
+            };
+
+            case DataType::Vec2ui:
+            {
+                wt::Assert(std::is_same <T, glm::u32vec2>::value == true, "Invalid value type. Expected \"DataType::Vec2ui\"");
                 break;
             };
 
             case DataType::Vec4f:
             {
-                wt::Assert(std::is_same <T, glm::vec4>::value == true, []()
-                {
-                    return std::string("Invalid value type. Expected \"DataType::Vec4f\"");
-                });
+                wt::Assert(std::is_same <T, glm::vec4>::value == true, "Invalid value type. Expected \"DataType::Vec4f\"");
+                break;
+            };
+
+            case DataType::Vec4ui:
+            {
+                wt::Assert(std::is_same <T, glm::u32vec4>::value == true, "Invalid value type. Expected \"DataType::Vec4ui\"");
                 break;
             };
 
             case DataType::Mat4f:
             {
-                wt::Assert(std::is_same <T, glm::mat4>::value == true, []()
-                {
-                    return std::string("Invalid value type. Expected \"DataType::Mat4f\"");
-                });
+                wt::Assert(std::is_same <T, glm::mat4>::value == true, "Invalid value type. Expected \"DataType::Mat4f\"");
                 break;
             };
 
@@ -739,7 +752,8 @@ public:
     /// <param name="readLayout"> The buffer at which to copy from </param>
     void CopyBufferData(const SSBOLayout& readLayout) const
     {
-        wt::Assert(_sizeInBytes < readLayout.GetBufferID(), "Copy-Write buffer is too small");
+        // Ensure that the current buffer is big enough to fit the data inside 'readLayout'
+        wt::Assert(_sizeInBytes > readLayout.GetBufferID(), "Copy-Write buffer is too small");
 
         glCopyNamedBufferSubData(readLayout.GetBufferID(), _bufferID, 0, 0, readLayout.GetSizeInBytes());
     };
@@ -812,7 +826,7 @@ public:
         return _sizeInBytes;
     };
 
-    constexpr std::size_t GetBufferID() const
+    constexpr std::uint32_t GetBufferID() const
     {
         return _bufferID;
     };

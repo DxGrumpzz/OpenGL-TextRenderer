@@ -113,18 +113,14 @@ void SetupOpenGL()
 };
 
 
-
 int main()
 {
-    TestDynamicSSBO();
-
-
-
     constexpr std::uint32_t initialWindowWidth = 800;
     constexpr std::uint32_t initialWindowHeight = 600;
 
     GLFWwindow* glfwWindow = InitializeGLFWWindow(initialWindowWidth, initialWindowHeight, "OpenGL-TextRenderer");
 
+    // TestDynamicSSBO();
 
     SetupOpenGL();
 
@@ -139,7 +135,7 @@ int main()
     fontSprite.Transform = glm::translate(glm::mat4(1.0f), { 100, 100, 0.0f });
 
 
-    static std::string textToDraw = "Type anything!";
+    static std::string textToDraw = "Type \nanything!";
 
 
     // Keyboard input handler
@@ -174,6 +170,12 @@ int main()
         if(key == GLFW_KEY_SPACE)
         {
             textToDraw.append(" ");
+            return;
+        };
+
+        if(key == GLFW_KEY_ENTER)
+        {
+            textToDraw.append("\n");
             return;
         };
 

@@ -21,20 +21,6 @@
 #include "DynamicSSBO.hpp"
 
 
-struct Input
-{
-    std::uint32_t GlyphWidth;
-    std::uint32_t GlyphHeight;
-
-    std::uint32_t TextureWidth;
-    std::uint32_t TextureHeight;
-
-    glm::vec4 ChromaKey;
-
-    glm::vec4 TextColour;
-};
-
-
 /// <summary>
 /// Draw text from a textue
 /// </summary>
@@ -141,7 +127,6 @@ public:
             0.0f, glyphHeightAsFloat,
         };
 
-
         glCreateVertexArrays(1, &_vao);
         glBindVertexArray(_vao);
 
@@ -156,33 +141,19 @@ public:
 
 
 
-        RawLayout rawInputLayout;
-
-        rawInputLayout.Add<ScalarElement, DataType::UInt32>("GlyphWidth");
-        rawInputLayout.Add<ScalarElement, DataType::UInt32>("GlyphHeight");
-
-        rawInputLayout.Add<ScalarElement, DataType::UInt32>("TextureWidth");
-        rawInputLayout.Add<ScalarElement, DataType::UInt32>("TextureHeight");
-
-        rawInputLayout.Add<ScalarElement, DataType::Vec4f>("ChromaKey");
-        
-        rawInputLayout.Add<ScalarElement, DataType::Vec4f>("TextColour");
-
-        auto rawCharacterArrayLayout = rawInputLayout.Add<ArrayElement>("Characters");
-        rawCharacterArrayLayout->SetArray(DataType::UInt32, _capacity);
-
+        RawLayout rawInputLayout = GenerateRawLayout(_capacity);
 
         _inputSSBO = SSBOLayout(rawInputLayout);
 
-        
+
         _inputSSBO->Get<ScalarElement>("GlyphWidth")->Set(_glyphWidth);
         _inputSSBO->Get<ScalarElement>("GlyphHeight")->Set(_glyphHeight);
 
         _inputSSBO->Get<ScalarElement>("TextureWidth")->Set(_fontSpriteWidth);
         _inputSSBO->Get<ScalarElement>("TextureHeight")->Set(_fontSpriteHeight);
-        
+
         _inputSSBO->Get<ScalarElement>("ChromaKey")->Set(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
-       
+
         // TODO: Refactor
     };
 
@@ -222,24 +193,11 @@ public:
         // Allocate buffer memory if necessary
         if(text.size() > _capacity)
         {
-            // Create a new RawLayout which will hold more data
-            RawLayout rawInputLayout;
-
-            rawInputLayout.Add<ScalarElement, DataType::UInt32>("GlyphWidth");
-            rawInputLayout.Add<ScalarElement, DataType::UInt32>("GlyphHeight");
-
-            rawInputLayout.Add<ScalarElement, DataType::UInt32>("TextureWidth");
-            rawInputLayout.Add<ScalarElement, DataType::UInt32>("TextureHeight");
-
-            rawInputLayout.Add<ScalarElement, DataType::Vec4f>("ChromaKey");
-
-            rawInputLayout.Add<ScalarElement, DataType::Vec4f>("TextColour");
-
-            auto rawCharacterArrayLayout = rawInputLayout.Add<ArrayElement>("Characters");
-
             // Calculate new capacity size
             _capacity = (text.size() + (_capacity / 2));
-            rawCharacterArrayLayout->SetArray(DataType::UInt32, _capacity);
+
+            // Create a new RawLayout which will hold more data
+            RawLayout rawInputLayout = GenerateRawLayout(_capacity);
 
             // Finalize the new layout, and create the new buffer
             SSBOLayout newSSBOLayout = SSBOLayout(rawInputLayout);
@@ -261,14 +219,26 @@ public:
         _inputSSBO->Get<ScalarElement>("TextColour")->Set(textColour);
 
 
+        std::uint32_t glyphLine = 0;
+        std::uint32_t glyphPlace = 0;
+
         // Copy texts' characters to the SSBO
         for(std::size_t index = 0;
             const auto & character : text)
         {
             const std::uint32_t& characterAsInt = character;
 
-            _inputSSBO->Get<ArrayElement>("Characters")->GetAtIndex<ScalarElement>(index)->Set(characterAsInt);
-            index++;
+            _inputSSBO->Get<ArrayElement>("Characters")->GetAtIndex<ScalarElement>(index)->Set(glm::u32vec4(characterAsInt, glyphLine, glyphPlace, 0));
+
+            ++glyphPlace;
+
+            if(character == '\n')
+            {
+                ++glyphLine;
+                glyphPlace = 0;
+            };
+
+            ++index;
         };
 
 
@@ -336,4 +306,24 @@ private:
         return textureID;
     };
 
+
+    RawLayout GenerateRawLayout(const std::size_t capacity) const
+    {
+        RawLayout rawInputLayout;
+
+        rawInputLayout.Add<ScalarElement, DataType::UInt32>("GlyphWidth");
+        rawInputLayout.Add<ScalarElement, DataType::UInt32>("GlyphHeight");
+
+        rawInputLayout.Add<ScalarElement, DataType::UInt32>("TextureWidth");
+        rawInputLayout.Add<ScalarElement, DataType::UInt32>("TextureHeight");
+
+        rawInputLayout.Add<ScalarElement, DataType::Vec4f>("ChromaKey");
+
+        rawInputLayout.Add<ScalarElement, DataType::Vec4f>("TextColour");
+
+        auto rawCharacterArrayLayout = rawInputLayout.Add<ArrayElement>("Characters");
+        rawCharacterArrayLayout->SetArray(DataType::Vec4ui, capacity);
+
+        return rawInputLayout;
+    };
 };
