@@ -3,7 +3,14 @@
 layout(location = 0) in vec2 VertexPosition;
 
 
-layout(std430, binding = 0) readonly buffer Input
+struct Character
+{
+    uint Glyph;
+    uint Line;
+    uint PlaceInLine;
+};
+
+layout(std140, binding = 0) readonly buffer Input
 {
     uint GlyphWidth;
     uint GlyphHeight;
@@ -15,11 +22,7 @@ layout(std430, binding = 0) readonly buffer Input
 
     vec4 TextColour;
 
-    // For now, I'm temporarily storing character, "Place", and line all in a vec4
-    // 'x' - Character
-    // 'y' - Line
-    // 'z' - Place in line
-    uvec4 Characters[];
+    Character Characters[];
 };
 
 
@@ -35,9 +38,8 @@ out vec4 VertexShaderTextColourOutput;
 
 void main()
 {
-
     // Subtract 32 (The space character) from the selected character to get the correct character index
-    const uint glyphIndex = Characters[gl_InstanceID].x - 32;
+    const uint glyphIndex = Characters[gl_InstanceID].Glyph - 32;
 
     const uint columns = TextureWidth / GlyphWidth;
     const uint rows = TextureHeight / GlyphHeight;
@@ -93,8 +95,8 @@ void main()
     VertexShaderChromaKeyOutput = ChromaKey;
 
 
-    const float glyphXPosition = VertexPosition.x + (Characters[gl_InstanceID].z * GlyphWidth);
-    const float glyphYPosition = VertexPosition.y + (Characters[gl_InstanceID].y * GlyphHeight);
+    const float glyphXPosition = VertexPosition.x + (Characters[gl_InstanceID].PlaceInLine * GlyphWidth);
+    const float glyphYPosition = VertexPosition.y + (Characters[gl_InstanceID].Line * GlyphHeight);
 
     gl_Position = Projection * TextTransform * vec4(glyphXPosition, glyphYPosition, 0.0f, 1.0f);
 };

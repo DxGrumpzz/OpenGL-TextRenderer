@@ -228,7 +228,13 @@ public:
         {
             const std::uint32_t& characterAsInt = character;
 
-            _inputSSBO->Get<ArrayElement>("Characters")->GetAtIndex<ScalarElement>(index)->Set(glm::u32vec4(characterAsInt, glyphLine, glyphPlace, 0));
+            auto characterStruct = _inputSSBO->Get<ArrayElement>("Characters")->GetAtIndex<StructElement>(index);
+
+            characterStruct->Get<ScalarElement>("Glyph")->Set(characterAsInt);
+
+            characterStruct->Get<ScalarElement>("Line")->Set(glyphLine);
+            characterStruct->Get<ScalarElement>("PlaceInLine")->Set(glyphPlace);
+
 
             ++glyphPlace;
 
@@ -306,7 +312,6 @@ private:
         return textureID;
     };
 
-
     RawLayout GenerateRawLayout(const std::size_t capacity) const
     {
         RawLayout rawInputLayout;
@@ -322,7 +327,13 @@ private:
         rawInputLayout.Add<ScalarElement, DataType::Vec4f>("TextColour");
 
         auto rawCharacterArrayLayout = rawInputLayout.Add<ArrayElement>("Characters");
-        rawCharacterArrayLayout->SetArray(DataType::Vec4ui, capacity);
+
+        auto rawCharacterStruct = rawCharacterArrayLayout->SetCustomArrayType(capacity);
+        rawCharacterStruct->Add<ScalarElement, DataType::UInt32>("Glyph");
+
+        rawCharacterStruct->Add<ScalarElement, DataType::UInt32>("Line");
+        rawCharacterStruct->Add<ScalarElement, DataType::UInt32>("PlaceInLine");
+
 
         return rawInputLayout;
     };
