@@ -897,6 +897,11 @@ private:
 
                     // Finalize the array layout
                     const auto arrayStructLayout = CreateLayout(rawArrayStructLayout, currentOffset);
+                    const std::size_t arraySizeInBytes = arrayStructLayout.back().second->GetOffset() + arrayStructLayout.back().second->GetSizeInBytes();
+
+                    arrayElement->_sizeInBytes = arraySizeInBytes;
+                    arrayElement->_offset = GetCorrectOffset(currentOffset, arraySizeInBytes);
+
 
                     // Clear the array, since the first element is no longer needed
                     arrayElement->_arrayElements.clear();
@@ -966,7 +971,13 @@ private:
 
                 // A pointer to the end of the list of finalized struct elements
                 auto structLayoutEndPointer = std::prev(structLayoutInitial.end());
-                const std::size_t structSize = structLayoutEndPointer->second->GetOffset() + structLayoutEndPointer->second->GetSizeInBytes();
+
+                const std::size_t structSizeInitial = structLayoutEndPointer->second->GetOffset() + structLayoutEndPointer->second->GetSizeInBytes();
+
+                // Accodring to the OpenGL spec' structs must be aligned to a 16-bit boundary.
+                // This adjusts the size accordingly
+                const std::size_t structSize = CalculateBoundaryOffset(structSizeInitial, 16);
+
 
 
                 elementAsStruct->_sizeInBytes = structSize;
@@ -1000,8 +1011,11 @@ private:
 
                 elementAsScalar->_bufferID = _bufferID;
 
-                // Simply, calaculate the offset, and we're done
-                element->_offset = GetCorrectOffset(currentOffset, element->GetSizeInBytes());
+
+                const DataType dataType = element->GetElementType();
+                const std::size_t baseAlignemnt = GetBaseAlignmentForDataType(dataType);
+
+                element->_offset = GetCorrectOffset(currentOffset, element->GetSizeInBytes(), baseAlignemnt);
                 currentOffset = element->GetOffset() + element->GetSizeInBytes();
 
                 layoutResult.emplace_back(std::make_pair(name, element));
@@ -1011,21 +1025,22 @@ private:
         return layoutResult;
     };
 
+
     /// <summary>
     /// Calculates an offset depending on if an element crosses a 16-byte boundary or not
     /// </summary>
     /// <param name="offset"> The offset at which the element starts from </param>
     /// <param name="size"> The element's size in bytes </param>
     /// <returns></returns>
-    constexpr std::size_t GetCorrectOffset(std::size_t offset, std::size_t sizeInBytes) const
+    constexpr std::size_t GetCorrectOffset(const std::size_t offset, const std::size_t sizeInBytes, const std::size_t baseAlignment = 16) const
     {
-        const bool crossesBoundary = CrossesBoundary(offset, sizeInBytes);
+        const bool crossesBoundary = CrossesBoundary(offset, sizeInBytes, baseAlignment);
 
         if(crossesBoundary == true)
         {
             const std::size_t rawOffset = offset;
 
-            const std::size_t actualOffset = CalculateBoundaryOffset(rawOffset);
+            const std::size_t actualOffset = CalculateBoundaryOffset(rawOffset, baseAlignment);
 
             const std::size_t padding = actualOffset - offset;
 
@@ -1041,10 +1056,10 @@ private:
     /// Calculates an offset-boundary given an initial offset
     /// </summary>
     /// <returns></returns>
-    constexpr std::size_t CalculateBoundaryOffset(std::size_t offset) const
+    constexpr std::size_t CalculateBoundaryOffset(const std::size_t offset, const std::size_t baseAlignment = 16) const
     {
         // I have no idea why, or how this works
-        const std::size_t boundaryOffset = offset + (16u - offset % 16u) % 16u;
+        const std::size_t boundaryOffset = offset + (baseAlignment - offset % baseAlignment) % baseAlignment;
 
         return boundaryOffset;
     };
@@ -1055,15 +1070,45 @@ private:
     /// <param name="offset"> The offset at which the element starts from </param>
     /// <param name="size"> The element's size in bytes </param>
     /// <returns></returns>
-    constexpr bool CrossesBoundary(std::size_t offset, std::size_t sizeInBytes) const
+    constexpr bool CrossesBoundary(const std::size_t offset, const std::size_t sizeInBytes, const std::size_t baseAlignment = 16) const
     {
-        // Calculate the boundary-offset from "offset"
-        const std::size_t boundaryOffset = CalculateBoundaryOffset(offset);
+        const std::size_t end = offset + sizeInBytes;
 
-        // Check if the total size of the element crosses that boundary
-        const bool crossesBoundary = ((offset + sizeInBytes) > boundaryOffset);
+        const std::size_t pageStart = offset / baseAlignment;
+        const std::size_t pageEnd = end / baseAlignment;
 
-        return crossesBoundary;
+        return ((pageStart != pageEnd) && (end % baseAlignment != 0u)) || (sizeInBytes > baseAlignment);
+    };
+
+
+    /// <summary>
+    /// Returns the base alignment of a DataType
+    /// </summary>
+    /// <param name="dataType"> </param>
+    /// <returns></returns>
+    constexpr std::size_t GetBaseAlignmentForDataType(const DataType dataType) const 
+    {
+        switch(dataType)
+        {
+            case DataType::UInt32:
+                return sizeof(float);
+
+            case DataType::Vec2f:
+                return sizeof(glm::vec2);
+
+            case DataType::Mat4f:
+            case DataType::Struct:
+            case DataType::Vec4f:
+                return sizeof(glm::vec4);
+
+            default:
+            {
+                wt::Assert(false, "Undefined or invalid type");
+                __debugbreak();
+                return static_cast<std::size_t>(-1);
+                break;
+            };
+        };
     };
 
 };
