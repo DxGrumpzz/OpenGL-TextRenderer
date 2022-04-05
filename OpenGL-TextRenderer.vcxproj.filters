@@ -16,6 +16,12 @@
     <None Include="Shaders\FontSpriteFragmentShader.glsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\CaretFragmentShader.glsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\CaretVertexShader.glsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="WindowsUtilities.hpp" />

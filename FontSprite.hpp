@@ -26,7 +26,6 @@
 /// </summary>
 class FontSprite
 {
-
 private:
 
     /// <summary>
@@ -129,12 +128,12 @@ public:
 
         glCreateVertexArrays(1, &_vao);
         glBindVertexArray(_vao);
-
+        
         // Glyph vertex positions
         glCreateBuffers(1, &_glyphVertexPositionsVBO);
         glNamedBufferData(_glyphVertexPositionsVBO, sizeof(glyphVertices), glyphVertices.data(), GL_STATIC_DRAW);
         glVertexArrayVertexBuffer(_vao, 0, _glyphVertexPositionsVBO, 0, sizeof(float) * 2);
-
+        
         glVertexArrayAttribFormat(_vao, 0, 2, GL_FLOAT, false, 0);
         glVertexArrayAttribBinding(_vao, 0, 0);
         glEnableVertexArrayAttrib(_vao, 0);
@@ -226,15 +225,12 @@ public:
         for(std::size_t index = 0;
             const auto & character : text)
         {
-            const std::uint32_t& characterAsInt = character;
-
             auto characterStruct = _inputSSBO->Get<ArrayElement>("Characters")->GetAtIndex<StructElement>(index);
 
-            characterStruct->Get<ScalarElement>("Glyph")->Set(characterAsInt);
+            characterStruct->Get<ScalarElement>("Glyph")->Set(static_cast<std::uint32_t>(character));
 
             characterStruct->Get<ScalarElement>("Line")->Set(glyphLine);
             characterStruct->Get<ScalarElement>("PlaceInLine")->Set(glyphPlace);
-
 
             ++glyphPlace;
 
@@ -249,6 +245,19 @@ public:
 
 
         glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<std::int32_t>(text.size()));
+    };
+
+
+public:
+
+    constexpr std::uint32_t GetGlyphHeight() const
+    {
+        return _glyphHeight;
+    };
+
+    constexpr std::uint32_t GetGlyphWidth() const
+    {
+        return _glyphWidth;
     };
 
 
@@ -329,6 +338,7 @@ private:
         auto rawCharacterArrayLayout = rawInputLayout.Add<ArrayElement>("Characters");
 
         auto rawCharacterStruct = rawCharacterArrayLayout->SetCustomArrayType(capacity);
+
         rawCharacterStruct->Add<ScalarElement, DataType::UInt32>("Glyph");
 
         rawCharacterStruct->Add<ScalarElement, DataType::UInt32>("Line");

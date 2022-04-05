@@ -371,7 +371,7 @@ inline void TestDynamicSSBOStd430()
                 __debugbreak();
         };
 
-        int _ = 0;
+
     };
 
 
@@ -464,7 +464,6 @@ inline void TestDynamicSSBOStd140()
                 __debugbreak();
         };
 
-        int _ = 0;
     };
 
 
