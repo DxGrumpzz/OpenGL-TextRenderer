@@ -6,11 +6,12 @@ layout(location = 0) in vec2 VertexPosition;
 struct Character
 {
     uint Glyph;
+
     uint Line;
     uint PlaceInLine;
 };
 
-layout(std140, binding = 0) readonly buffer Input
+layout(std430, binding = 0) readonly buffer Input
 {
     uint GlyphWidth;
     uint GlyphHeight;
@@ -26,6 +27,7 @@ layout(std140, binding = 0) readonly buffer Input
 };
 
 
+
 uniform mat4 Projection = mat4(1.0f);
 
 uniform mat4 TextTransform = mat4(1.0f);
@@ -34,6 +36,7 @@ uniform mat4 TextTransform = mat4(1.0f);
 out vec2 VertexShaderTextureCoordinateOutput;
 out vec4 VertexShaderChromaKeyOutput;
 out vec4 VertexShaderTextColourOutput;
+
 
 
 void main()
@@ -93,6 +96,7 @@ void main()
 
     VertexShaderTextColourOutput = TextColour;
     VertexShaderChromaKeyOutput = ChromaKey;
+
 
 
     const float glyphXPosition = VertexPosition.x + (Characters[gl_InstanceID].PlaceInLine * GlyphWidth);

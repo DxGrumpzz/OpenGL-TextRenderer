@@ -3,7 +3,7 @@
 #include "DynamicSSBO.hpp"
 
 
-inline void TestDynamicSSBO()
+inline void TestDynamicSSBOStd430()
 {
     // Uint32 - vec4 padding
     {
@@ -332,6 +332,7 @@ inline void TestDynamicSSBO()
     };
 
 
+    // Array of struct with vec2 alignemnt
     {
         RawLayout structArrayLayout;
 
@@ -350,9 +351,16 @@ inline void TestDynamicSSBO()
         if(structArray->GetOffset() != 0)
             __debugbreak();
 
+        if(structArray->GetSizeInBytes() != 48)
+            __debugbreak();
+
+
         for(std::size_t i = 0; i < 3; ++i)
         {
             if(structArray->GetAtIndex<StructElement>(i)->GetOffset() != (i * 16))
+                __debugbreak();
+
+            if(structArray->GetAtIndex<StructElement>(i)->GetSizeInBytes() != 16)
                 __debugbreak();
 
 
@@ -367,6 +375,7 @@ inline void TestDynamicSSBO()
     };
 
 
+    // Array of struct with uint alignemnt
     {
         RawLayout structArrayLayout;
 
@@ -386,10 +395,108 @@ inline void TestDynamicSSBO()
         if(structArray->GetOffset() != 0)
             __debugbreak();
 
+        if(structArray->GetSizeInBytes() != 36)
+            __debugbreak();
+
+
+        for(std::size_t i = 0; i < 3; ++i)
+        {
+            if(structArray->GetAtIndex<StructElement>(i)->GetOffset() != (i * 12))
+                __debugbreak();
+
+            if(structArray->GetAtIndex<StructElement>(i)->GetSizeInBytes() != 12)
+                __debugbreak();
+
+
+            if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("a")->GetOffset() != (i * 12))
+                __debugbreak();
+
+            if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("b")->GetOffset() != ((i * 12) + 4))
+                __debugbreak();
+
+            if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("c")->GetOffset() != ((i * 12) + 8))
+                __debugbreak();
+        };
+
+    };
+
+};
+
+
+inline void TestDynamicSSBOStd140()
+{
+    // Array of struct with vec2 alignemnt
+    {
+        RawLayout structArrayLayout;
+
+        auto rawArrayElement = structArrayLayout.Add<ArrayElement, DataType::Array>("Test_off_0");
+
+        auto arrayType = rawArrayElement->SetCustomArrayType(3);
+
+        arrayType->Add<ScalarElement, DataType::UInt32>("Test_Uint");
+        arrayType->Add<ScalarElement, DataType::Vec2f>("Test_Vec2");
+
+
+        SSBOLayout layout = SSBOLayout(structArrayLayout, 0, false);
+
+        auto structArray = layout.Get<ArrayElement>("Test_off_0");
+
+        if(structArray->GetOffset() != 0)
+            __debugbreak();
+
+        if(structArray->GetSizeInBytes() != 48)
+            __debugbreak();
+
 
         for(std::size_t i = 0; i < 3; ++i)
         {
             if(structArray->GetAtIndex<StructElement>(i)->GetOffset() != (i * 16))
+                __debugbreak();
+
+            if(structArray->GetAtIndex<StructElement>(i)->GetSizeInBytes() != 16)
+                __debugbreak();
+
+
+            if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("Test_Uint")->GetOffset() != (i * 16))
+                __debugbreak();
+
+            if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("Test_Vec2")->GetOffset() != ((i * 16) + 8))
+                __debugbreak();
+        };
+
+        int _ = 0;
+    };
+
+
+    // Array of struct with uint alignemnt
+    {
+        RawLayout structArrayLayout;
+
+        auto rawArrayElement = structArrayLayout.Add<ArrayElement, DataType::Array>("Test_Array");
+
+        auto arrayType = rawArrayElement->SetCustomArrayType(3);
+
+        arrayType->Add<ScalarElement, DataType::UInt32>("a");
+        arrayType->Add<ScalarElement, DataType::UInt32>("b");
+
+
+        SSBOLayout layout = SSBOLayout(structArrayLayout, 0, false);
+
+        auto structArray = layout.Get<ArrayElement>("Test_Array");
+
+        if(structArray->GetOffset() != 0)
+            __debugbreak();
+
+        if(structArray->GetSizeInBytes() != 48)
+            __debugbreak();
+
+
+        for(std::size_t i = 0; i < 3; ++i)
+        {
+            if(structArray->GetAtIndex<StructElement>(i)->GetOffset() != (i * 16))
+                __debugbreak();
+
+            if(structArray->GetAtIndex<StructElement>(i)->GetSizeInBytes() != 16)
                 __debugbreak();
 
 
@@ -398,34 +505,7 @@ inline void TestDynamicSSBO()
 
             if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("b")->GetOffset() != ((i * 16) + 4))
                 __debugbreak();
-
-            if(structArray->GetAtIndex<StructElement>(i)->Get<ScalarElement>("c")->GetOffset() != ((i * 16) + 8))
-                __debugbreak();
         };
-
-    };
-
-    // Struct test
-    {
-        RawLayout rawLayout;
-
-        rawLayout.Add<ScalarElement, DataType::UInt32>("Uint_off_0");
-
-        auto rawStructElement = rawLayout.Add<StructElement, DataType::Struct>("Struct_off_4");
-
-        rawStructElement->Add < ScalarElement, DataType::UInt32>("Struct.Uint_off_4");
-
-        SSBOLayout layout = SSBOLayout(rawLayout);
-
-        if(layout.Get<ScalarElement>("Uint_off_0")->GetOffset() != 0)
-            __debugbreak();
-
-        if(layout.Get<StructElement>("Struct_off_4")->GetOffset() != 4)
-            __debugbreak();
-
-
-        if(layout.Get<StructElement>("Struct_off_4")->Get<ScalarElement>("Struct.Uint_off_4")->GetOffset() != 4)
-            __debugbreak();
 
     };
 };

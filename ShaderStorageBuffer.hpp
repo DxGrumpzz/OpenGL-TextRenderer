@@ -15,15 +15,16 @@ struct SSBOElement
 {
 public:
 
-    std::size_t Count = 0;
-
     std::size_t Offset = 0;
 
+    std::size_t Count = 0;
+
+    std::string Name;
 
 public:
     SSBOElement(const std::size_t offset, const std::size_t count = 1) :
-        Count(count),
-        Offset(offset)
+        Offset(offset),
+        Count(count)
     {
     };
 
@@ -221,6 +222,8 @@ private:
         glGetProgramResourceiv(shaderProgram.GetProgramID(), GL_SHADER_STORAGE_BLOCK, ssboIndex, 1, &activeVariablesProperty, numberOfVariables, nullptr, variableIndices.data());
 
 
+        std::vector<SSBOElement> elements = std::vector<SSBOElement>(variableIndices.size(), SSBOElement(0));
+
         // Get SSBO variable offsets
         for(std::size_t i = 0; i < variableIndices.size(); ++i)
         {
@@ -257,7 +260,16 @@ private:
 
 
             _ssboElements.insert(std::make_pair(name, SSBOElement(offset, arraySize)));
+            elements[i] = SSBOElement(offset, arraySize);
+            elements[i].Name = name;
+
         };
+
+        std::sort(elements.begin(), elements.end(),
+                  [](const SSBOElement& element1, const SSBOElement& element2)
+        {
+            return element1.Offset < element2.Offset;
+        });
 
         return true;
     };

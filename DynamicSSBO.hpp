@@ -696,7 +696,7 @@ private:
 public:
 
 
-    SSBOLayout(RawLayout& rawLayout, std::uint32_t bindingPoint = 0, std::uint32_t usage = GL_DYNAMIC_COPY) :
+    SSBOLayout(RawLayout& rawLayout, const std::uint32_t bindingPoint = 0, const bool useStd430 = true, const std::uint32_t usage = GL_DYNAMIC_COPY) :
         _bindingPoint(bindingPoint)
     {
 
@@ -705,7 +705,7 @@ public:
         Bind();
 
         // Create the element layout
-        const auto layout = CreateLayout(rawLayout);
+        const auto layout = CreateLayout(rawLayout, useStd430);
 
         // Get the last element, so we can calculate the total size in bytes
         const auto& endElement = layout.back();
@@ -855,7 +855,7 @@ private:
     /// <param name="rawLayout"> The initial layout </param>
     /// <param name="offset"> Initial (or relative) offset at which this function calculates other offsets </param>
     /// <returns></returns>
-    std::vector<std::pair<std::string, std::shared_ptr<IElement>>> CreateLayout(RawLayout& rawLayout, std::size_t offset = 0) const
+    std::vector<std::pair<std::string, std::shared_ptr<IElement>>> CreateLayout(RawLayout& rawLayout, bool useStd430 = true, std::size_t offset = 0) const
     {
         std::vector<std::pair<std::string, std::shared_ptr<IElement>>> layoutResult;
 
@@ -896,7 +896,7 @@ private:
 
 
                     // Finalize the array layout
-                    const auto arrayStructLayout = CreateLayout(rawArrayStructLayout, currentOffset);
+                    const auto arrayStructLayout = CreateLayout(rawArrayStructLayout, useStd430, currentOffset);
                     const std::size_t arraySizeInBytes = arrayStructLayout.back().second->GetOffset() + arrayStructLayout.back().second->GetSizeInBytes();
 
                     arrayElement->_sizeInBytes = arraySizeInBytes;
@@ -938,7 +938,7 @@ private:
                     };
 
                     // Finalize array layout
-                    const auto arrayLayout = CreateLayout(rawArrayLayout, currentOffset);
+                    const auto arrayLayout = CreateLayout(rawArrayLayout, useStd430, currentOffset);
 
                     for(auto& arrayLayoutElement : arrayLayout)
                     {
@@ -967,27 +967,54 @@ private:
                 };
 
                 // Finalized (initial) struct layout, this doesn't yet use the right offsets, only the size
-                const auto structLayoutInitial = CreateLayout(rawStructLayout, 0);
+                const auto structLayoutInitial = CreateLayout(rawStructLayout, useStd430, 0);
 
                 // A pointer to the end of the list of finalized struct elements
                 auto structLayoutEndPointer = std::prev(structLayoutInitial.end());
 
                 const std::size_t structSizeInitial = structLayoutEndPointer->second->GetOffset() + structLayoutEndPointer->second->GetSizeInBytes();
+                
 
-                // Accodring to the OpenGL spec' structs must be aligned to a 16-bit boundary.
-                // This adjusts the size accordingly
-                const std::size_t structSize = CalculateBoundaryOffset(structSizeInitial, 16);
+                std::size_t structSize = 0;
+
+                // If we're using std430 layout rules
+                if(useStd430 == true)
+                {
+                    // Find the element with the biggest base alignment
+                    const auto& largestElementBaseAlignment = std::max_element(structLayoutInitial.cbegin(), structLayoutInitial.cend(),
+                                                                               [&](const std::pair<std::string, std::shared_ptr<IElement>>& element1, const std::pair<std::string, std::shared_ptr<IElement>>& element2)
+                    {
+                        const std::size_t element1BaseAlignemnt = GetBaseAlignmentForDataType(element1.second->GetElementType());
+                        const std::size_t element2BaseAlignemnt = GetBaseAlignmentForDataType(element2.second->GetElementType());
+
+                        return element1BaseAlignemnt < element2BaseAlignemnt;
+                    });
+
+                    const std::size_t baseAlignement = GetBaseAlignmentForDataType(largestElementBaseAlignment->second->GetElementType());
+
+
+                    // Set the struct size and offset to a multiple of the base alignment of the biggest element
+                    structSize = CalculateBoundaryOffset(structSizeInitial, baseAlignement);
+                    elementAsStruct->_offset = GetCorrectOffset(currentOffset, structSize, baseAlignement);
+                }
+                // Otherwise, we're using std140 layout rules
+                else
+                {
+                    // Set the struct size and offset to multiple of 16
+                    structSize = CalculateBoundaryOffset(structSizeInitial, 16);
+                    elementAsStruct->_offset = GetCorrectOffset(currentOffset, structSize, 16);
+                };
 
 
 
                 elementAsStruct->_sizeInBytes = structSize;
-                elementAsStruct->_offset = GetCorrectOffset(currentOffset, structSize);
+
 
                 // Update currect offset
                 currentOffset = elementAsStruct->_offset;
 
                 // (Actually) finalize the struct layout, this will result in the correct struct layout
-                const auto structLayoutFinal = CreateLayout(rawStructLayout, currentOffset);
+                const auto structLayoutFinal = CreateLayout(rawStructLayout, useStd430, currentOffset);
 
                 // Because when we first added element to the struct, when we were defining it.
                 // They are not longer needed, so we can clear them, and add the correct elements
@@ -1086,7 +1113,7 @@ private:
     /// </summary>
     /// <param name="dataType"> </param>
     /// <returns></returns>
-    constexpr std::size_t GetBaseAlignmentForDataType(const DataType dataType) const 
+    constexpr std::size_t GetBaseAlignmentForDataType(const DataType dataType) const
     {
         switch(dataType)
         {
